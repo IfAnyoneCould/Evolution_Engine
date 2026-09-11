@@ -30,7 +30,7 @@ func (p *ProgramBin) Run(g *genome.Genome) (float64, error) {
 	allArgs := []string{string(jsonBytes)}
 	allArgs = append(allArgs, p.args...)
 
-	cmd := exec.Command(p.path, allArgs...)
+	cmd := exec.Command("./"+p.path, allArgs...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -41,7 +41,7 @@ func (p *ProgramBin) Run(g *genome.Genome) (float64, error) {
 		return -1, err
 	}
 
-	output := strings.Trim(stdout.String(), "\n")
+	output := strings.TrimSpace(stdout.String())
 	result, err := strconv.ParseFloat(output, 64)
 	if err != nil {
 		return -1, err
