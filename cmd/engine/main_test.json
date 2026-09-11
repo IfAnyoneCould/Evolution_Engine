@@ -1,8 +1,12 @@
 {
   "program": {
-    "path": "cmd/engine/TestRun.exe"
+    "path": "cmd/engine/TestRun.exe",
+    "args": ["1","4"]
   },
   "bounds":
-  [[-1,1],[-1,1]],
-  "nudge": 0.01
+  [
+    [-10,10],
+    [-10,10]
+  ],
+  "nudge": 0.1
 }

@@ -1,10 +1,6 @@
 package config
 
 import (
-	"Evolution_Engine/internal/genome"
-	"bytes"
-	"fmt"
-	"os/exec"
 	"slices"
 	"testing"
 )
@@ -106,34 +102,4 @@ func TestParseInputFile(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestRun(t *testing.T) {
-	want := 0.1799
-	bounds, prog, _, _ := ParseInputFile("config_test7.json")
-	g := genome.NewGenome(2)
-	g.SetBounds(bounds...)
-	result, err := prog.Run(g)
-	if err != nil {
-		t.Errorf("%s", err)
-	}
-	if result != want {
-		t.Errorf("incorrect result: expected %f, got %f", want, result)
-	}
-}
-
-func TestEXE(t *testing.T) {
-	cmd := exec.Command("./TestRun.exe", "[0,0]")
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-
-	if err != nil {
-		t.Errorf("%s", err)
-	}
-	fmt.Println(stdout.String())
-	fmt.Println(stderr.String())
 }

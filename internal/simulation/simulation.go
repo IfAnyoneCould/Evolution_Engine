@@ -1,6 +1,7 @@
 package simulation
 
 import (
+	"Evolution_Engine/internal/genome"
 	"Evolution_Engine/internal/population"
 	"context"
 	"fmt"
@@ -34,7 +35,7 @@ func (s *Simulation) Run() {
 		}
 		if s.Pop.TopFitness >= s.targetFitness {
 			_ = s.Pop.CloseSims()
-			fmt.Printf("simulation reached or exceed fitness target %f in %d cycles", s.targetFitness, s.currentCycle)
+			fmt.Printf("simulation reached or exceed fitness target %f in %d cycles\n", s.targetFitness, s.currentCycle)
 			return
 		}
 		err = s.Pop.NewGen(&population.NewGenConfig{Pressure: 0.25, Elite: 2})
@@ -48,4 +49,19 @@ func (s *Simulation) Run() {
 	}
 	fmt.Printf("Reached a fitness of %f in %d cycles. Target fitness: %f\n", s.Pop.TopFitness, s.currentCycle, s.targetFitness)
 	_ = s.Pop.CloseSims()
+}
+
+func (s *Simulation) GetBestGenome() *genome.Genome {
+	s.Pop.Rank()
+	return s.Pop.Agents[0].Gene
+}
+
+func (s *Simulation) GetBestWeights() []float64 {
+	s.Pop.Rank()
+	return s.Pop.Agents[0].Gene.GetWeights()
+}
+
+func (s *Simulation) GetBestAgent() population.Agent {
+	s.Pop.Rank()
+	return s.Pop.Agents[0]
 }
