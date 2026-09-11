@@ -22,13 +22,13 @@ func NewAgent(bounds [][2]float64) (Agent, error) {
 	g := genome.NewGenome(len(bounds))
 	err := g.SetBounds(bounds...)
 	if err != nil {
-		return Agent{}, nil
+		return Agent{}, err
 	}
 	g.Init()
 	return Agent{g, -1, false}, nil
 }
 
-func (a Agent) Evaluate(p *config.ProgramBin) error {
+func (a *Agent) Evaluate(p *config.ProgramBin) error {
 	fitness, err := p.Run(a.Gene)
 	if err != nil {
 		return err
@@ -112,9 +112,9 @@ func (p *Population) RunBatch(ctx context.Context, workers int) error {
 
 func (p *Population) Rank() {
 	slices.SortFunc(p.Agents, func(a, b Agent) int {
-		return cmp.Compare(a.Fitness, b.Fitness)
+		return cmp.Compare(b.Fitness, a.Fitness)
 	})
-	p.topFitness = p.Agents[0].Fitness
+	p.TopFitness = p.Agents[0].Fitness
 }
 
 type NewGenConfig struct {

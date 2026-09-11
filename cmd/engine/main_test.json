@@ -1,0 +1,8 @@
+{
+  "program": {
+    "path": "cmd/engine/TestRun.exe"
+  },
+  "bounds":
+  [[-1,1],[-1,1]],
+  "nudge": 0.01
+}

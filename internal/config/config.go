@@ -20,6 +20,10 @@ func NewProgram(path string, args []string) *ProgramBin {
 	return &ProgramBin{path, args}
 }
 
+func (p *ProgramBin) PrintElements() {
+	fmt.Printf("path: %s, args: %s", p.path, p.args)
+}
+
 func (p *ProgramBin) Run(g *genome.Genome) (float64, error) {
 	weights := g.GetWeights()
 	jsonBytes, err := json.Marshal(weights)
