@@ -1,6 +1,7 @@
-package main
+package config
 
 import (
+	"Evolution_Engine/internal/genome"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -19,7 +20,7 @@ func NewProgram(path string, args []string) *ProgramBin {
 	return &ProgramBin{path, args}
 }
 
-func (p *ProgramBin) Run(g *Genome) (float64, error) {
+func (p *ProgramBin) Run(g *genome.Genome) (float64, error) {
 	weights := g.GetWeights()
 	jsonBytes, err := json.Marshal(weights)
 	if err != nil {
@@ -40,8 +41,8 @@ func (p *ProgramBin) Run(g *Genome) (float64, error) {
 		return -1, err
 	}
 
-	output := strings.Trim(stdout.String(),"\n")
-	result, err := strconv.ParseFloat(output,64)
+	output := strings.Trim(stdout.String(), "\n")
+	result, err := strconv.ParseFloat(output, 64)
 	if err != nil {
 		return -1, err
 	}
@@ -49,7 +50,7 @@ func (p *ProgramBin) Run(g *Genome) (float64, error) {
 	return result, nil
 }
 
-func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64,  error) {
+func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, error) {
 	defaultPath := "data/simInfo.json"
 	var path string
 	switch len(p) {
@@ -73,10 +74,10 @@ func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64,  error) {
 			Args []string `json:"args"`
 		} `json:"program"`
 		Bounds [][2]float64 `json:"bounds"`
-		Nudge float64 `json:"nudge"`
+		Nudge  float64      `json:"nudge"`
 	}
 
-	if err := json.Unmarshal(file,&cfg); err != nil {
+	if err := json.Unmarshal(file, &cfg); err != nil {
 		return nil, nil, -1, err
 	}
 
@@ -89,5 +90,5 @@ func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64,  error) {
 		args = []string{}
 	}
 
-	return cfg.Bounds, NewProgram(cfg.Prog.Path,args), cfg.Nudge, nil
+	return cfg.Bounds, NewProgram(cfg.Prog.Path, args), cfg.Nudge, nil
 }

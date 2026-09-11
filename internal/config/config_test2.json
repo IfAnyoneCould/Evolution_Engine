@@ -1,0 +1,6 @@
+{
+  "program": {
+    "path":"test_program.exe"
+  },
+  "nudge": 0.1
+}
