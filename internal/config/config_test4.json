@@ -1,0 +1,11 @@
+{
+  "program": {
+    "path":"test_program.exe",
+    "args":["-v","--seed","42"]
+  },
+  "bounds":[
+    [-1,1],
+    [0,5]
+  ],
+  "nudge": 0.1
+}
