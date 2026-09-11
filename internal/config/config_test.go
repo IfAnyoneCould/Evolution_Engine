@@ -46,6 +46,38 @@ func TestParseInputFile(t *testing.T) {
 			0.1,
 			true,
 		},
+		{
+			"program with args",
+			"config_test4.json",
+			genBoundsArray(-1, 1, 0, 5),
+			NewProgram("test_program.exe", []string{"-v", "--seed", "42"}),
+			0.1,
+			false,
+		},
+		{
+			"nonexistent file",
+			"does_not_exist.json",
+			nil,
+			nil,
+			-1,
+			true,
+		},
+		{
+			"malformed json",
+			"config_test5.json",
+			nil,
+			nil,
+			-1,
+			true,
+		},
+		{
+			"empty bounds array",
+			"config_test6.json",
+			nil,
+			nil,
+			-1,
+			true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {

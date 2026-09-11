@@ -85,6 +85,10 @@ func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, error) {
 		return nil, nil, -1, fmt.Errorf("no bounds data, check config")
 	}
 
+	if cfg.Nudge == 0 {
+		return nil, nil, -1, fmt.Errorf("no nudge data, check config")
+	}
+
 	args := cfg.Prog.Args
 	if args == nil {
 		args = []string{}
