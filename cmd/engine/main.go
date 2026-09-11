@@ -13,5 +13,5 @@ func main() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	sim.Run(10, false)
+	sim.Run()
 }

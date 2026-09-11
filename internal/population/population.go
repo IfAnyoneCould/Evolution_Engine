@@ -28,8 +28,8 @@ func NewAgent(bounds [][2]float64) (Agent, error) {
 	return Agent{g, -1, false}, nil
 }
 
-func (a *Agent) Evaluate(p *config.ProgramBin) error {
-	fitness, err := p.Run(a.Gene)
+func (a *Agent) Evaluate(s *config.SimProcess) error {
+	fitness, err := s.Eval(a.Gene)
 	if err != nil {
 		return err
 	}
@@ -39,14 +39,15 @@ func (a *Agent) Evaluate(p *config.ProgramBin) error {
 }
 
 type Population struct {
-	Agents     []Agent
-	Prog       *config.ProgramBin
-	TopFitness float64
-	Nudge      float64
+	Agents      []Agent
+	ProcList    []*config.SimProcess
+	WorkerCount int
+	TopFitness  float64
+	Nudge       float64
 	//GenConfig NewGenConfig
 }
 
-func NewPopulation(count int, path string) (*Population, error) {
+func NewPopulation(gCount int, path string, wCount int) (*Population, error) {
 	bounds, prog, nudge, err := config.ParseInputFile(path)
 
 	if err != nil {
@@ -54,7 +55,7 @@ func NewPopulation(count int, path string) (*Population, error) {
 	}
 
 	var agents []Agent
-	for range count {
+	for range gCount {
 		a, err := NewAgent(bounds)
 		if err != nil {
 			return &Population{}, err
@@ -62,10 +63,28 @@ func NewPopulation(count int, path string) (*Population, error) {
 		agents = append(agents, a)
 	}
 
-	return &Population{agents, prog, -1, nudge}, nil
+	var procList []*config.SimProcess
+	for range wCount {
+		sim, err := config.NewSimProcess(prog.Path, prog.Args)
+		if err != nil {
+			return nil, err
+		}
+		procList = append(procList, sim)
+	}
+
+	return &Population{agents, procList, wCount, -1, nudge}, nil
 }
 
-func (p *Population) RunBatch(ctx context.Context, workers int) error {
+func (p *Population) CloseSims() error {
+	for i := range p.ProcList {
+		if err := p.ProcList[i].Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Population) RunBatch(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -75,24 +94,22 @@ func (p *Population) RunBatch(ctx context.Context, workers int) error {
 	}
 	close(agents)
 
-	errs := make(chan error)
+	errs := make(chan error, len(p.Agents))
 
 	wg := sync.WaitGroup{}
-	for range workers {
+	for i := range p.WorkerCount {
 		wg.Go(func() {
 			for a := range agents {
-				err := a.Evaluate(p.Prog)
+				err := a.Evaluate(p.ProcList[i])
 				if err != nil {
 					select {
 					case errs <- err:
 					case <-ctx.Done():
+						return
 					}
-					cancel()
-					return
+					continue
 				}
-				if ctx.Err() != nil {
-					return
-				}
+
 			}
 		})
 	}

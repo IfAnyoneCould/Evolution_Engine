@@ -51,7 +51,7 @@ func TestParseInputFile(t *testing.T) {
 			true,
 		},
 		{
-			"program with args",
+			"program with Args",
 			"config_test4.json",
 			genBoundsArray(-1, 1, 0, 5),
 			NewProgram("test_program.exe", []string{"-v", "--seed", "42"}),
@@ -95,11 +95,11 @@ func TestParseInputFile(t *testing.T) {
 			if !slices.Equal(bounds, tt.WantBound) {
 				t.Errorf("incorrect bounds")
 			}
-			if !slices.Equal(prog.args, tt.WantProg.args) {
-				t.Errorf("program incorrect args")
+			if !slices.Equal(prog.Args, tt.WantProg.Args) {
+				t.Errorf("program incorrect Args")
 			}
-			if prog.path != tt.WantProg.path {
-				t.Errorf("program incorrect path: expected %s, got %s", tt.WantProg.path, prog.path)
+			if prog.Path != tt.WantProg.Path {
+				t.Errorf("program incorrect Path: expected %s, got %s", tt.WantProg.Path, prog.Path)
 			}
 			if nudge != tt.WantNudge {
 				t.Errorf("incorrect nudge")

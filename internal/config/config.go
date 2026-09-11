@@ -2,9 +2,10 @@ package config
 
 import (
 	"Evolution_Engine/internal/genome"
-	"bytes"
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -12,46 +13,56 @@ import (
 )
 
 type ProgramBin struct {
-	path string
-	args []string
+	Path string
+	Args []string
 }
 
 func NewProgram(path string, args []string) *ProgramBin {
 	return &ProgramBin{path, args}
 }
 
-func (p *ProgramBin) PrintElements() {
-	fmt.Printf("path: %s, args: %s", p.path, p.args)
+type SimProcess struct {
+	Proc   *exec.Cmd
+	stdin  io.WriteCloser
+	stdout *bufio.Reader
 }
 
-func (p *ProgramBin) Run(g *genome.Genome) (float64, error) {
+func NewSimProcess(path string, args []string) (*SimProcess, error) {
+	cmd := exec.Command(path, args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err = cmd.Start(); err != nil {
+		return nil, nil
+	}
+	return &SimProcess{cmd, stdin, bufio.NewReader(stdout)}, nil
+}
+
+func (s *SimProcess) Eval(g *genome.Genome) (float64, error) {
 	weights := g.GetWeights()
-	jsonBytes, err := json.Marshal(weights)
-	if err != nil {
+	jsonBytes, _ := json.Marshal(weights)
+
+	if _, err := s.stdin.Write(append(jsonBytes, '\n')); err != nil {
 		return -1, err
 	}
 
-	allArgs := []string{string(jsonBytes)}
-	allArgs = append(allArgs, p.args...)
-
-	cmd := exec.Command("./"+p.path, allArgs...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
+	resp, err := s.stdout.ReadString('\n')
 	if err != nil {
 		return -1, err
 	}
+	return strconv.ParseFloat(strings.TrimSpace(resp), 64)
+}
 
-	output := strings.TrimSpace(stdout.String())
-	result, err := strconv.ParseFloat(output, 64)
-	if err != nil {
-		return -1, err
+func (s *SimProcess) Close() error {
+	if err := s.stdin.Close(); err != nil {
+		return err
 	}
-
-	return result, nil
+	return s.Proc.Wait()
 }
 
 func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, error) {
@@ -74,8 +85,8 @@ func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, error) {
 
 	var cfg struct {
 		Prog struct {
-			Path string   `json:"path"`
-			Args []string `json:"args"`
+			Path string   `json:"Path"`
+			Args []string `json:"Args"`
 		} `json:"program"`
 		Bounds [][2]float64 `json:"bounds"`
 		Nudge  float64      `json:"nudge"`
