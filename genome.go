@@ -9,7 +9,6 @@ type Param struct {
 	Weight, Lower, Upper float64
 }
 type Genome struct {
-	// weight, lower bound, upper bound
 	Params []Param
 }
 
