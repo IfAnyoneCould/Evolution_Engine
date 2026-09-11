@@ -36,6 +36,12 @@ func (g *Genome) SetBounds(b ...[2]float64) error {
 	return nil
 }
 
+func (g *Genome) Clone() *Genome {
+	params := make([]Param, len(g.Params))
+	copy(params, g.Params)
+	return &Genome{Params: params}
+}
+
 func (g *Genome) SetBoundsUniform(lower float64, upper float64) error {
 	if lower > upper {
 		err := fmt.Errorf("illegal arguments for bounds. upper must be greater than lower, and lower cannot equal upper")
