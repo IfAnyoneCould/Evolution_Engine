@@ -2,6 +2,7 @@ package config
 
 import (
 	"Evolution_Engine/internal/genome"
+	"Evolution_Engine/internal/nudge"
 	"bufio"
 	"encoding/json"
 	"fmt"
@@ -38,7 +39,7 @@ func NewSimProcess(path string, args []string) (*SimProcess, error) {
 		return nil, err
 	}
 	if err = cmd.Start(); err != nil {
-		return nil, nil
+		return nil, err
 	}
 	return &SimProcess{cmd, stdin, bufio.NewReader(stdout)}, nil
 }
@@ -65,7 +66,7 @@ func (s *SimProcess) Close() error {
 	return s.Proc.Wait()
 }
 
-func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, error) {
+func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, float64, nudge.Function, error) {
 	defaultPath := "data/simInfo.json"
 	var path string
 	switch len(p) {
@@ -75,33 +76,34 @@ func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, error) {
 		path = p[0]
 	default:
 		err := fmt.Errorf("illegal number of arguments: expected 0 or 1, got %d", len(p))
-		return nil, nil, -1, err
+		return nil, nil, -1, -1, nil, err
 	}
 
 	file, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, -1, err
+		return nil, nil, -1, -1, nil, err
 	}
 
 	var cfg struct {
 		Prog struct {
-			Path string   `json:"Path"`
-			Args []string `json:"Args"`
+			Path string   `json:"path"`
+			Args []string `json:"args"`
 		} `json:"program"`
-		Bounds [][2]float64 `json:"bounds"`
-		Nudge  float64      `json:"nudge"`
+		Bounds    [][2]float64 `json:"bounds"`
+		Nudge     float64      `json:"nudge"`
+		MinNudge  float64      `json:"min_nudge"`
+		NudgeFunc *struct {
+			Type  *string   `json:"type"`
+			Param []float64 `json:"params"`
+		} `json:"nudge_func"`
 	}
 
 	if err := json.Unmarshal(file, &cfg); err != nil {
-		return nil, nil, -1, err
+		return nil, nil, -1, -1, nil, err
 	}
 
 	if len(cfg.Bounds) == 0 {
-		return nil, nil, -1, fmt.Errorf("no bounds data, check config")
-	}
-
-	if cfg.Nudge == 0 {
-		return nil, nil, -1, fmt.Errorf("no nudge data, check config")
+		return nil, nil, -1, -1, nil, fmt.Errorf("no bounds data, check config")
 	}
 
 	args := cfg.Prog.Args
@@ -109,5 +111,31 @@ func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, error) {
 		args = []string{}
 	}
 
-	return cfg.Bounds, NewProgram(cfg.Prog.Path, args), cfg.Nudge, nil
+	if cfg.Nudge == 0 {
+		cfg.Nudge = 0.05
+	}
+
+	if cfg.MinNudge == 0 {
+		cfg.MinNudge = 0.000001
+	}
+
+	var nudgeFunc nudge.Function
+	nudgeFunc = nudge.NewConstantFunction(1)
+	if cfg.NudgeFunc != nil {
+		if cfg.NudgeFunc.Type == nil || len(cfg.NudgeFunc.Param) < 1 {
+			return nil, nil, -1, -1, nil, fmt.Errorf("missing nudgeFunc data, check config")
+		}
+		switch strings.ToLower(*cfg.NudgeFunc.Type) {
+		case "constant":
+			nudgeFunc = nudge.NewConstantFunction(cfg.NudgeFunc.Param[0])
+		case "linear":
+			nudgeFunc = nudge.NewLinearFunction(cfg.NudgeFunc.Param[0])
+		case "quadratic":
+			nudgeFunc = nudge.NewQuadraticFunction(cfg.NudgeFunc.Param[0])
+		default:
+			return nil, nil, -1, -1, nil, fmt.Errorf("nudgeFunc type not recognize, check config")
+		}
+	}
+
+	return cfg.Bounds, NewProgram(cfg.Prog.Path, args), cfg.Nudge, cfg.MinNudge, nudgeFunc, nil
 }

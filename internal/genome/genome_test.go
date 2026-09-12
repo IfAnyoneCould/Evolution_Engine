@@ -98,7 +98,7 @@ func TestNudgeChangesWeights(t *testing.T) {
 	g.Nudge(1.0)
 	after := g.GetWeights()
 	if slices.Equal(before, after) {
-		t.Errorf("Nudge changed nothing; weights identical before and after")
+		t.Errorf("BaseFraction changed nothing; weights identical before and after")
 	}
 }
 

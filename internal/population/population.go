@@ -3,6 +3,7 @@ package population
 import (
 	"Evolution_Engine/internal/config"
 	"Evolution_Engine/internal/genome"
+	"Evolution_Engine/internal/nudge"
 	"cmp"
 	"context"
 	"errors"
@@ -39,16 +40,19 @@ func (a *Agent) Evaluate(s *config.SimProcess) error {
 }
 
 type Population struct {
-	Agents      []Agent
-	ProcList    []*config.SimProcess
-	WorkerCount int
-	TopFitness  float64
-	Nudge       float64
+	Agents       []Agent
+	ProcList     []*config.SimProcess
+	WorkerCount  int
+	TopFitness   float64
+	BaseFraction float64
+	MinNudge     float64
+	NudgeFunc    nudge.Function
+	StartFitness float64
 	//GenConfig NewGenConfig
 }
 
 func NewPopulation(gCount int, path string, wCount int) (*Population, error) {
-	bounds, prog, nudge, err := config.ParseInputFile(path)
+	bounds, prog, n, minN, nFunc, err := config.ParseInputFile(path)
 
 	if err != nil {
 		return &Population{}, err
@@ -72,7 +76,13 @@ func NewPopulation(gCount int, path string, wCount int) (*Population, error) {
 		procList = append(procList, sim)
 	}
 
-	return &Population{agents, procList, wCount, -1, nudge}, nil
+	return &Population{agents, procList, wCount, -1, n, minN, nFunc, 0}, nil
+}
+
+func (p *Population) CalcNudge(fit float64, goal float64) float64 {
+	progress := nudge.Clamp((fit-p.StartFitness)/(goal-p.StartFitness), 0, 1)
+	raw := p.BaseFraction * p.NudgeFunc.Get(progress)
+	return max(raw, p.MinNudge)
 }
 
 func (p *Population) CloseSims() error {
@@ -139,7 +149,7 @@ type NewGenConfig struct {
 	Pressure float64 // 0 to 1, how much of the current generation is included
 }
 
-func (p *Population) NewGen(config *NewGenConfig) error {
+func (p *Population) NewGen(config *NewGenConfig, goal float64) error {
 	p.Rank()
 
 	n := len(p.Agents)
@@ -156,8 +166,9 @@ func (p *Population) NewGen(config *NewGenConfig) error {
 
 	for len(newAgents) < n {
 		parent := p.Agents[rand.Intn(cutoff)]
+
 		childGene := parent.Gene.Clone()
-		childGene.Nudge(p.Nudge)
+		childGene.Nudge(p.CalcNudge(parent.Fitness, goal))
 		newAgents = append(newAgents, Agent{Gene: childGene, Evaluated: false})
 	}
 	p.Agents = newAgents

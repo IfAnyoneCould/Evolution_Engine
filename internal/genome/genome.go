@@ -75,14 +75,17 @@ func (g *Genome) GetWeights() []float64 {
 func (g *Genome) Init() {
 	for i, v := range g.Params {
 		val := v.Lower + rand.Float64()*(v.Upper-v.Lower)
-		g.SetWeight(i, val) // don't check error, weight it always between bounds
+		_ = g.SetWeight(i, val) // don't check error, weight it always between bounds
 	}
 }
 
 // Nudge bounds is the range of the nudge. ex: a bounds of .1 can nudge a weight from -0.1 to 0.1
 func (g *Genome) Nudge(bounds float64) {
 	for i := range len(g.Params) {
-		nudge := -bounds + rand.Float64()*2*bounds
+		p := &g.Params[i]
+		paramRange := p.Upper - p.Lower
+		nudgeAmount := bounds * paramRange
+		nudge := -nudgeAmount + rand.Float64()*2*nudgeAmount
 		test := g.Params[i].Weight + nudge
 		switch {
 		case test > g.Params[i].Upper:
