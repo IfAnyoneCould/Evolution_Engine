@@ -76,6 +76,24 @@ for line in sys.stdin:
     print(my_fitness(weights), flush=True)
 ```
 
+## Examples
+
+`examples/` has three working programs, standard library only.
+
+| File | What it's for |
+| --- | --- |
+| `distance_sim.py` | The simplest possible worker — a 2D point scored on how close it is to a goal. One smooth basin, no local minima. Use it to check the engine is wired up correctly before pointing it at anything hard. |
+| `rastrigin_sim.py` | The real benchmark. N-dimensional Rastrigin, covered in local optima but with a single global optimum in a wide bowl, so it actually rewards explore-then-refine and distinguishes the decaying nudge functions from a constant one. Per-evaluation cost is tunable so the worker pool has something to parallelise. |
+| `reference_optimizer.py` | Not a worker — a plain Python GA over the same function, built to the same shape as the engine. It's the control: if it solves Rastrigin and the engine doesn't, the engine is the problem; if both plateau in the same place, that's just the population and mutation settings. |
+
+```sh
+# wire the sim into a config, then
+go run ./cmd/engine
+
+# or run the baseline on its own
+python examples/reference_optimizer.py
+```
+
 ## Layout
 
 | Package | Responsibility |
