@@ -13,7 +13,7 @@ that can read stdin and write stdout can be optimised, in any language.
 
 ```
                  weights (JSON) ->
-  Population  ---------------------  Worker process (your program)
+  Population  ---------------------  Worker process (go program)
    (agents)    <- fitness (float)
 ```
 
