@@ -31,9 +31,8 @@ func (s *Simulation) Run() {
 		start := time.Now()
 		err := s.Pop.RunBatch(ctx)
 		fmt.Printf("batch took %v\n", time.Since(start))
-		if s.currentCycle == 1 {
+		if s.currentCycle == 0 {
 			s.Pop.StartFitness = s.Pop.TopFitness
-			fmt.Println(s.Pop.StartFitness)
 		}
 		if err != nil {
 			fmt.Println(err)
@@ -47,7 +46,7 @@ func (s *Simulation) Run() {
 			_ = s.Pop.CloseSims()
 			return
 		}
-		err = s.Pop.NewGen(&population.NewGenConfig{Pressure: 0.45, Elite: 1}, s.targetFitness)
+		err = s.Pop.NewGen(&population.NewGenConfig{Pressure: 0.45, Elite: 1}, s.targetFitness) //TODO add newgenconfig stuff to config file with good defaults
 		if err != nil {
 			fmt.Println(err)
 			fmt.Printf("Simulation took %v\n", time.Since(total))
@@ -63,8 +62,8 @@ func (s *Simulation) Run() {
 			_ = s.Pop.CloseSims()
 			return
 		}
-		if s.currentCycle%10 == 0 {
-			//	lastTop = s.Pop.TopFitness
+		if s.currentCycle%10 == 0 { // TODO add this config and reconfigure stagnation detection to be both more configurable and more intelligent, such as adding epsilon
+			lastTop = s.Pop.TopFitness
 		}
 	}
 	fmt.Printf("Reached a fitness of %f in %d cycles. Target fitness: %f\n", s.Pop.TopFitness, s.currentCycle, s.targetFitness)

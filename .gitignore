@@ -32,3 +32,6 @@ Thumbs.db
 # Python examples
 __pycache__/
 *.pyc
+
+# claude stuff
+SUGGESTIONS.md

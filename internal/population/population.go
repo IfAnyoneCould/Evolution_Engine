@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"slices"
 	"sync"
@@ -26,7 +27,7 @@ func NewAgent(bounds [][2]float64) (Agent, error) {
 		return Agent{}, err
 	}
 	g.Init()
-	return Agent{g, -1, false}, nil
+	return Agent{g, math.Inf(-1), false}, nil
 }
 
 func (a *Agent) Evaluate(s *config.SimProcess) error {
@@ -45,7 +46,7 @@ type Population struct {
 	WorkerCount  int
 	TopFitness   float64
 	BaseFraction float64
-	MinNudge     float64
+	MinNudge     float64 // TODO rename nudge to fraction, nudge is variable so it is confusing
 	NudgeFunc    nudge.Function
 	StartFitness float64
 	//GenConfig NewGenConfig
@@ -81,7 +82,10 @@ func NewPopulation(gCount int, path string, wCount int) (*Population, error) {
 
 func (p *Population) CalcNudge(fit float64, goal float64) float64 {
 	progress := nudge.Clamp((fit-p.StartFitness)/(goal-p.StartFitness), 0, 1)
-	raw := p.BaseFraction * p.NudgeFunc.Get(progress)
+	if goal-p.StartFitness == 0 {
+		progress = 1
+	}
+	raw := p.BaseFraction * nudge.Clamp(p.NudgeFunc.Get(progress), 0, 1)
 	return max(raw, p.MinNudge)
 }
 
@@ -110,6 +114,9 @@ func (p *Population) RunBatch(ctx context.Context) error {
 	for i := range p.WorkerCount {
 		wg.Go(func() {
 			for a := range agents {
+				if a.Evaluated {
+					continue
+				}
 				err := a.Evaluate(p.ProcList[i])
 				if err != nil {
 					select {
@@ -119,7 +126,6 @@ func (p *Population) RunBatch(ctx context.Context) error {
 					}
 					continue
 				}
-
 			}
 		})
 	}
@@ -139,6 +145,12 @@ func (p *Population) RunBatch(ctx context.Context) error {
 
 func (p *Population) Rank() {
 	slices.SortFunc(p.Agents, func(a, b Agent) int {
+		if a.Evaluated != b.Evaluated {
+			if a.Evaluated {
+				return -1
+			}
+			return 1
+		}
 		return cmp.Compare(b.Fitness, a.Fitness)
 	})
 	p.TopFitness = p.Agents[0].Fitness
@@ -161,7 +173,9 @@ func (p *Population) NewGen(config *NewGenConfig, goal float64) error {
 	newAgents := make([]Agent, 0, n)
 
 	for i := 0; i < config.Elite && i < n; i++ {
-		newAgents = append(newAgents, p.Agents[i])
+		if p.Agents[i].Evaluated {
+			newAgents = append(newAgents, p.Agents[i])
+		}
 	}
 
 	for len(newAgents) < n {
@@ -169,7 +183,7 @@ func (p *Population) NewGen(config *NewGenConfig, goal float64) error {
 
 		childGene := parent.Gene.Clone()
 		childGene.Nudge(p.CalcNudge(parent.Fitness, goal))
-		newAgents = append(newAgents, Agent{Gene: childGene, Evaluated: false})
+		newAgents = append(newAgents, Agent{Gene: childGene, Fitness: math.Inf(-1), Evaluated: false})
 	}
 	p.Agents = newAgents
 	return nil

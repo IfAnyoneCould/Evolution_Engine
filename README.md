@@ -64,6 +64,10 @@ go run ./cmd/engine
 go test ./...
 ```
 
+The tests drive real worker processes. `testdata/sim` is a small stand-in
+program they build once per package and talk to over the same pipe a real
+simulation would use, so nothing in the suite needs Python installed.
+
 ## Writing a program to optimise
 
 Loop forever: read one line, parse it as a JSON array of floats, print your
@@ -106,7 +110,7 @@ python examples/reference_optimizer.py
 
 ## Current state
 
-Working end to end, with tests across config and genome. Still to do: the
+Working end to end, with tests across every package. Still to do: the
 stall-detection branch in `simulation.go` is partly commented out and needs
 deciding on, and tuning parameters are hardcoded at the call site rather than
 read from config.

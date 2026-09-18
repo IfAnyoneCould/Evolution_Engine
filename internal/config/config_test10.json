@@ -1,0 +1,12 @@
+{
+  "program": {
+    "path":"test_program.exe"
+  },
+  "bounds":[
+    [-1,1]
+  ],
+  "nudge_func": {
+    "type": "quadratic",
+    "params": [2.0, 9.0]
+  }
+}

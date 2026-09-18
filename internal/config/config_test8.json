@@ -1,0 +1,15 @@
+{
+  "program": {
+    "path":"test_program.exe"
+  },
+  "bounds":[
+    [-1,1],
+    [-1,1]
+  ],
+  "nudge": 0.2,
+  "min_nudge": 0.01,
+  "nudge_func": {
+    "type": "constant",
+    "params": [0.5]
+  }
+}

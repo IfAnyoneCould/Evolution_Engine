@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ProgramBin struct {
@@ -52,11 +54,29 @@ func (s *SimProcess) Eval(g *genome.Genome) (float64, error) {
 		return -1, err
 	}
 
-	resp, err := s.stdout.ReadString('\n')
-	if err != nil {
-		return -1, err
+	type result struct {
+		line string
+		err  error
 	}
-	return strconv.ParseFloat(strings.TrimSpace(resp), 64)
+
+	ch := make(chan result, 1)
+
+	go func() {
+		resp, err := s.stdout.ReadString('\n')
+		ch <- result{resp, err}
+	}()
+
+	select {
+	case r := <-ch:
+		resp, err := r.line, r.err
+		if err != nil {
+			return math.Inf(-1), err
+		}
+		return strconv.ParseFloat(strings.TrimSpace(resp), 64)
+	case <-time.After(5 * time.Second): // TODO make the duration customizable in the config
+		s.Close() //TODO think about making simulations more robust, so they don't die on error. That robustness level should be handled in the config too.
+		return math.Inf(-1), fmt.Errorf("reading from simulation timed out, simulation may have hanged")
+	}
 }
 
 func (s *SimProcess) Close() error {
@@ -66,7 +86,7 @@ func (s *SimProcess) Close() error {
 	return s.Proc.Wait()
 }
 
-func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, float64, nudge.Function, error) {
+func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, float64, nudge.Function, error) { // TODO make this return a struct, dealing with this is annoying. Alternatively, just have it return the population, as that's the only place this function is ever used
 	defaultPath := "data/simInfo.json"
 	var path string
 	switch len(p) {
@@ -112,11 +132,11 @@ func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, float64, n
 	}
 
 	if cfg.Nudge == 0 {
-		cfg.Nudge = 0.05
+		cfg.Nudge = 0.05 // TODO make all defaults present in a default struct, so that i don't have to do this everytime I add a new parameter
 	}
 
 	if cfg.MinNudge == 0 {
-		cfg.MinNudge = 0.000001
+		cfg.MinNudge = 0.000001 // TODO add this to config
 	}
 
 	var nudgeFunc nudge.Function
