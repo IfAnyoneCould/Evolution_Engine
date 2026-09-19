@@ -104,7 +104,7 @@ func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, float64, n
 		return nil, nil, -1, -1, nil, err
 	}
 
-	var cfg struct {
+	var cfg struct { //TODO pull this out and make it a separate struct, though don't export it
 		Prog struct {
 			Path string   `json:"path"`
 			Args []string `json:"args"`
