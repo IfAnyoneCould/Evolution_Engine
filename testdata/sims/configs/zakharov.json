@@ -1,0 +1,19 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/zakharov.py", "8"]
+  },
+  "bounds": [
+    [-5.0, 10.0],
+    [-5.0, 10.0],
+    [-5.0, 10.0],
+    [-5.0, 10.0],
+    [-5.0, 10.0],
+    [-5.0, 10.0],
+    [-5.0, 10.0],
+    [-5.0, 10.0]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

@@ -1,0 +1,15 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/multi_objective_scalarized.py", "4", "2.0", "5", "1"]
+  },
+  "bounds": [
+    [-5, 5],
+    [-5, 5],
+    [-5, 5],
+    [-5, 5]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

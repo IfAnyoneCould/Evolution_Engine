@@ -1,0 +1,15 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/pressure_vessel.py"]
+  },
+  "bounds": [
+    [0.0625, 6.1875],
+    [0.0625, 6.1875],
+    [10, 200],
+    [10, 200]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

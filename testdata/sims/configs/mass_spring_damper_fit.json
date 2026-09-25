@@ -1,0 +1,14 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/mass_spring_damper_fit.py", "0.01", "1"]
+  },
+  "bounds": [
+    [0.1, 5],
+    [0, 2],
+    [0.1, 20]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

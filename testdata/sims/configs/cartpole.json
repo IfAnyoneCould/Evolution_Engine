@@ -1,0 +1,15 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/cartpole.py", "1000", "0.02"]
+  },
+  "bounds": [
+    [-10, 10],
+    [-10, 10],
+    [-50, 50],
+    [-20, 20]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

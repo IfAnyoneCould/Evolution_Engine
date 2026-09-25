@@ -1,0 +1,13 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/easom.py"]
+  },
+  "bounds": [
+    [-100.0, 100.0],
+    [-100.0, 100.0]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

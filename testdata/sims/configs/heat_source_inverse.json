@@ -1,0 +1,17 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/heat_source_inverse.py", "2", "250", "6000"]
+  },
+  "bounds": [
+    [0, 1],
+    [0, 2],
+    [0.02, 0.2],
+    [0, 1],
+    [0, 2],
+    [0.02, 0.2]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

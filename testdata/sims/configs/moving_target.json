@@ -1,0 +1,14 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/moving_target.py", "3", "0.0005", "5", "1"]
+  },
+  "bounds": [
+    [-5, 5],
+    [-5, 5],
+    [-5, 5]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

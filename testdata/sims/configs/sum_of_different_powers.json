@@ -1,0 +1,19 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/sum_of_different_powers.py", "8"]
+  },
+  "bounds": [
+    [-1.0, 1.0],
+    [-1.0, 1.0],
+    [-1.0, 1.0],
+    [-1.0, 1.0],
+    [-1.0, 1.0],
+    [-1.0, 1.0],
+    [-1.0, 1.0],
+    [-1.0, 1.0]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

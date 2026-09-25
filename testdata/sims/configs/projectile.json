@@ -1,0 +1,14 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/projectile.py", "150", "0.002", "0.005"]
+  },
+  "bounds": [
+    [5, 85],
+    [5, 80],
+    [-1, 1]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}

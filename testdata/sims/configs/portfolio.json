@@ -1,0 +1,21 @@
+{
+  "program": {
+    "path": "python",
+    "args": ["testdata/sims/portfolio.py", "10", "3.0", "1"]
+  },
+  "bounds": [
+    [0, 1],
+    [0, 1],
+    [0, 1],
+    [0, 1],
+    [0, 1],
+    [0, 1],
+    [0, 1],
+    [0, 1],
+    [0, 1],
+    [0, 1]
+  ],
+  "nudge": 0.1,
+  "min_nudge": 0.01,
+  "nudge_func": {"type": "quadratic", "params": [2.0]}
+}
