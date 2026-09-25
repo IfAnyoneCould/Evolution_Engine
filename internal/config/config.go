@@ -86,6 +86,28 @@ func (s *SimProcess) Close() error {
 	return s.Proc.Wait()
 }
 
+type JsonParams struct {
+	Prog struct {
+		Path string   `json:"path"`
+		Args []string `json:"args"`
+	} `json:"program"`
+	Bounds    [][2]float64 `json:"bounds"`
+	Nudge     float64      `json:"nudge"`
+	MinNudge  float64      `json:"min_nudge"`
+	NudgeFunc *struct {
+		Type  *string   `json:"type"`
+		Param []float64 `json:"params"`
+	} `json:"nudge_func"`
+}
+type Params struct {
+	Bounds    [][2]float64
+	Prog      *ProgramBin
+	Fraction  float64
+	MinNudge  float64
+	NudgeFunc nudge.Function
+	err       error
+}
+
 func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, float64, nudge.Function, error) { // TODO make this return a struct, dealing with this is annoying. Alternatively, just have it return the population, as that's the only place this function is ever used
 	defaultPath := "data/simInfo.json"
 	var path string

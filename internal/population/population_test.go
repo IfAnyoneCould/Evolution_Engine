@@ -118,8 +118,8 @@ func TestNewPopulation(t *testing.T) {
 	if p.BaseFraction != 0.05 {
 		t.Errorf("incorrect default nudge: expected %f, got %f", 0.05, p.BaseFraction)
 	}
-	if p.MinNudge != 0.000001 {
-		t.Errorf("incorrect default min nudge: expected %f, got %f", 0.000001, p.MinNudge)
+	if p.Fraction != 0.000001 {
+		t.Errorf("incorrect default min nudge: expected %f, got %f", 0.000001, p.Fraction)
 	}
 	if p.NudgeFunc == nil {
 		t.Errorf("no nudge function set")
@@ -142,8 +142,8 @@ func TestNewPopulationConfigValues(t *testing.T) {
 	if p.BaseFraction != 0.3 {
 		t.Errorf("incorrect nudge: expected %f, got %f", 0.3, p.BaseFraction)
 	}
-	if p.MinNudge != 0.02 {
-		t.Errorf("incorrect min nudge: expected %f, got %f", 0.02, p.MinNudge)
+	if p.Fraction != 0.02 {
+		t.Errorf("incorrect min nudge: expected %f, got %f", 0.02, p.Fraction)
 	}
 	if got := p.NudgeFunc.Get(0.25); math.Abs(got-0.75) > 1e-9 {
 		t.Errorf("wrong nudge function: expected %f, got %f", 0.75, got)
@@ -204,7 +204,7 @@ func TestCalcNudge(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Population{BaseFraction: tt.base, MinNudge: tt.minNudge, NudgeFunc: tt.function, StartFitness: tt.start}
+			p := &Population{BaseFraction: tt.base, Fraction: tt.minNudge, NudgeFunc: tt.function, StartFitness: tt.start}
 			got := p.CalcNudge(tt.fit, tt.goal)
 			if math.Abs(got-tt.want) > 1e-9 {
 				t.Errorf("incorrect nudge: expected %f, got %f", tt.want, got)
@@ -445,7 +445,7 @@ func TestNewGenPullsFromTheTop(t *testing.T) {
 	p := newTestPop(t, "sum", 40, 2)
 	p.NudgeFunc = nudge.NewConstantFunction(1)
 	p.BaseFraction = 0
-	p.MinNudge = 0
+	p.Fraction = 0
 	if err := p.RunBatch(context.Background()); err != nil {
 		t.Fatalf("could not run the first batch: %v", err)
 	}

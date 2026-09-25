@@ -46,7 +46,7 @@ type Population struct {
 	WorkerCount  int
 	TopFitness   float64
 	BaseFraction float64
-	MinNudge     float64 // TODO rename nudge to fraction, nudge is variable so it is confusing
+	Fraction     float64
 	NudgeFunc    nudge.Function
 	StartFitness float64
 	//GenConfig NewGenConfig
@@ -86,7 +86,7 @@ func (p *Population) CalcNudge(fit float64, goal float64) float64 {
 		progress = 1
 	}
 	raw := p.BaseFraction * nudge.Clamp(p.NudgeFunc.Get(progress), 0, 1)
-	return max(raw, p.MinNudge)
+	return max(raw, p.Fraction)
 }
 
 func (p *Population) CloseSims() error {
