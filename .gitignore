@@ -1,5 +1,6 @@
 # Compiled binaries
 *.exe
+!testdata/sims/go/bin/*.exe
 *.exe~
 *.dll
 *.so
@@ -35,3 +36,4 @@ __pycache__/
 
 # claude stuff
 SUGGESTIONS.md
+plan.md
