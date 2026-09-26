@@ -1,0 +1,10 @@
+{
+  "program": {
+    "path":"test_program.exe"
+  },
+  "bounds":[
+    [-1,1]
+  ],
+  "fraction": 0,
+  "min_nudge": 0
+}

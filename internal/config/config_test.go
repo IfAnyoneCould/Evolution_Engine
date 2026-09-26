@@ -67,7 +67,7 @@ func TestParseInputFile(t *testing.T) {
 		Path         string
 		WantBound    [][2]float64
 		WantProg     *ProgramBin
-		WantNudge    float64
+		WantFraction float64
 		WantMinNudge float64
 		WantErr      bool
 	}{
@@ -77,25 +77,25 @@ func TestParseInputFile(t *testing.T) {
 			genBoundsArray(-1, 1, -1, 1, -1, 1, 0, 0, 2, 2, -10, 100),
 			NewProgram("test_program.exe", []string{}),
 			0.1,
-			0.000001,
+			0.0001,
 			false,
 		},
 		{
 			"no bounds",
 			"config_test2.json",
-			genBoundsArray(-1, 1),
-			NewProgram("test_program.exe", []string{}),
-			0.1,
-			0.000001,
+			nil,
+			nil,
+			-1,
+			-1,
 			true,
 		},
 		{
-			"no nudge",
+			"no fraction",
 			"config_test3.json",
 			genBoundsArray(-1, 1, -1, 1, -1, 1, 0, 0, 2, 2, -10, 100),
 			NewProgram("test_program.exe", []string{}),
 			0.05,
-			0.000001,
+			0.0001,
 			false,
 		},
 		{
@@ -104,7 +104,7 @@ func TestParseInputFile(t *testing.T) {
 			genBoundsArray(-1, 1, 0, 5),
 			NewProgram("test_program.exe", []string{"-v", "--seed", "42"}),
 			0.1,
-			0.000001,
+			0.0001,
 			false,
 		},
 		{
@@ -143,35 +143,53 @@ func TestParseInputFile(t *testing.T) {
 			0.01,
 			false,
 		},
+		{
+			"explicit zeros are kept, not replaced by defaults",
+			"config_test14.json",
+			genBoundsArray(-1, 1),
+			NewProgram("test_program.exe", []string{}),
+			0,
+			0,
+			false,
+		},
+		{
+			"no program path",
+			"config_test15.json",
+			nil,
+			nil,
+			-1,
+			-1,
+			true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			bounds, prog, nudge, minNudge, nudgeFunc, err := ParseInputFile(tt.Path)
+			p := ParseInputFile(tt.Path)
 			if tt.WantErr {
-				if err == nil {
+				if p.Err == nil {
 					t.Errorf("expected error")
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if p.Err != nil {
+				t.Fatalf("unexpected error: %v", p.Err)
 			}
-			if !slices.Equal(bounds, tt.WantBound) {
+			if !slices.Equal(p.Bounds, tt.WantBound) {
 				t.Errorf("incorrect bounds")
 			}
-			if !slices.Equal(prog.Args, tt.WantProg.Args) {
+			if !slices.Equal(p.Prog.Args, tt.WantProg.Args) {
 				t.Errorf("program incorrect Args")
 			}
-			if prog.Path != tt.WantProg.Path {
-				t.Errorf("program incorrect Path: expected %s, got %s", tt.WantProg.Path, prog.Path)
+			if p.Prog.Path != tt.WantProg.Path {
+				t.Errorf("program incorrect Path: expected %s, got %s", tt.WantProg.Path, p.Prog.Path)
 			}
-			if nudge != tt.WantNudge {
-				t.Errorf("incorrect nudge: wanted %f, got %f", tt.WantNudge, nudge)
+			if p.Fraction != tt.WantFraction {
+				t.Errorf("incorrect fraction: wanted %f, got %f", tt.WantFraction, p.Fraction)
 			}
-			if minNudge != tt.WantMinNudge {
-				t.Errorf("incorrect min nudge: wanted %f, got %f", tt.WantMinNudge, minNudge)
+			if p.MinNudge != tt.WantMinNudge {
+				t.Errorf("incorrect min nudge: wanted %f, got %f", tt.WantMinNudge, p.MinNudge)
 			}
-			if nudgeFunc == nil {
+			if p.NudgeFunc == nil {
 				t.Errorf("no nudge function returned")
 			}
 		})
@@ -192,34 +210,25 @@ func TestParseNudgeFunc(t *testing.T) {
 		{"quadratic ignores extra params", "config_test10.json", 1, 1, false},
 		{"unknown type", "config_test11.json", 0, 0, true},
 		{"no params", "config_test12.json", 0, 0, true},
-		{"no type", "config_test13.json", 0, 0, true},
+		{"no type defaults to constant", "config_test13.json", 0.5, 1, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			_, _, _, _, nudgeFunc, err := ParseInputFile(tt.Path)
+			p := ParseInputFile(tt.Path)
 			if tt.WantErr {
-				if err == nil {
+				if p.Err == nil {
 					t.Errorf("expected error")
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if p.Err != nil {
+				t.Fatalf("unexpected error: %v", p.Err)
 			}
-			got := nudgeFunc.Get(tt.Progress)
+			got := p.NudgeFunc.Get(tt.Progress)
 			if math.Abs(got-tt.WantVal) > 1e-9 {
 				t.Errorf("incorrect value at progress %f: wanted %f, got %f", tt.Progress, tt.WantVal, got)
 			}
 		})
-	}
-}
-
-func TestParseInputFileArgCount(t *testing.T) {
-	if _, _, _, _, _, err := ParseInputFile(); err == nil {
-		t.Errorf("expected an error, the default path does not exist from here")
-	}
-	if _, _, _, _, _, err := ParseInputFile("config_test1.json", "config_test3.json"); err == nil {
-		t.Errorf("expected an error for two paths")
 	}
 }
 

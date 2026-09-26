@@ -3,5 +3,5 @@
     "path":"test_program.exe"
   },
   "bounds":[],
-  "nudge": 0.1
+  "fraction": 0.1
 }

@@ -2,7 +2,6 @@ package config
 
 import (
 	"Evolution_Engine/internal/genome"
-	"Evolution_Engine/internal/nudge"
 	"bufio"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,25 +26,29 @@ func NewProgram(path string, args []string) *ProgramBin {
 }
 
 type SimProcess struct {
-	Proc   *exec.Cmd
-	stdin  io.WriteCloser
-	stdout *bufio.Reader
+	Proc    *exec.Cmd
+	stdin   io.WriteCloser
+	stdout  *bufio.Reader
+	timeout time.Duration
 }
 
-func NewSimProcess(path string, args []string) (*SimProcess, error) {
+func NewSimProcess(path string, args []string, timeout float64) (*SimProcess, error) {
 	cmd := exec.Command(path, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		stdin.Close()
 		return nil, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		stdin.Close()
 		return nil, err
 	}
 	if err = cmd.Start(); err != nil {
+		stdin.Close()
 		return nil, err
 	}
-	return &SimProcess{cmd, stdin, bufio.NewReader(stdout)}, nil
+	return &SimProcess{cmd, stdin, bufio.NewReader(stdout), time.Duration(timeout * float64(time.Millisecond))}, nil
 }
 
 func (s *SimProcess) Eval(g *genome.Genome) (float64, error) {
@@ -74,7 +78,7 @@ func (s *SimProcess) Eval(g *genome.Genome) (float64, error) {
 			return math.Inf(-1), err
 		}
 		return strconv.ParseFloat(strings.TrimSpace(resp), 64)
-	case <-time.After(5 * time.Second): // TODO make the duration customizable in the config
+	case <-time.After(s.timeout):
 		s.Close() //TODO think about making simulations more robust, so they don't die on error. That robustness level should be handled in the config too.
 		return math.Inf(-1), fmt.Errorf("reading from simulation timed out, simulation may have hanged")
 	}
@@ -99,17 +103,17 @@ type NudgeFunc struct {
 
 type RunSettings struct {
 	TargetFitness  float64 `json:"target_fitness"`
-	MaxCycles      uint32  `json:"max_cycles"`
-	PopulationSize uint32  `json:"population_size"`
+	MaxCycles      uint    `json:"max_cycles"`
+	PopulationSize uint    `json:"population_size"`
 }
 
 type Selection struct {
 	Pressure float64 `json:"pressure"`
-	Elite    uint32  `json:"elite"`
+	Elite    uint    `json:"elite"`
 }
 
 type StagnationDetect struct {
-	Interval uint32  `json:"interval"`
+	Patience uint    `json:"patience"`
 	Epsilon  float64 `json:"epsilon"`
 }
 
@@ -119,7 +123,7 @@ type SimSettings struct {
 }
 
 type Output struct {
-	WeighPath string `json:"weight_path"`
+	WeightPath string `json:"weight_path"`
 	//TODO add history control and pathing
 }
 
@@ -130,7 +134,7 @@ type JsonParams struct {
 	MinNudge         float64          `json:"min_nudge"`
 	NudgeFunc        NudgeFunc        `json:"nudge_func"`
 	RunSettings      RunSettings      `json:"run_settings"`
-	Workers          uint32           `json:"workers"`
+	Workers          uint             `json:"workers"`
 	Selection        Selection        `json:"selection"`
 	StagnationDetect StagnationDetect `json:"stagnation_detection"`
 	SimSettings      SimSettings      `json:"sim_settings"`
@@ -156,14 +160,14 @@ func defaults() JsonParams {
 		Elite:    2,
 	}
 	stagnant := StagnationDetect{
-		Interval: 50,
+		Patience: 50,
 		Epsilon:  0.01,
 	}
 	simSettings := SimSettings{
 		Timeout: 500,
 	}
 	output := Output{
-		WeighPath: "",
+		WeightPath: "",
 	}
 
 	return JsonParams{
@@ -201,55 +205,45 @@ func (p JsonParams) validate() error {
 	if p.RunSettings.PopulationSize <= p.Selection.Elite {
 		return errors.New("config error: selection.elite cannot be greater than or equal to run_settings.population_size")
 	}
-	if p.Selection.Pressure < 0 || p.Selection.Pressure >= 1 {
-		return errors.New("config error: invalid range for selection.pressure")
+	if p.Selection.Pressure <= 0 || p.Selection.Pressure > 1 {
+		return errors.New("config error: invalid range for selection.pressure, must be within (0,1]")
+	}
+	if p.RunSettings.TargetFitness <= 0 || p.RunSettings.TargetFitness > 1 {
+		return errors.New("config error: run_settings.target_fitness outside of bounds (0,1]")
+	}
+	if p.StagnationDetect.Patience <= 0 {
+		return errors.New("config error: stagnation_detection.patience must be greater than 0")
+	}
+	if p.StagnationDetect.Epsilon <= 0 {
+		return errors.New("config error: stagnation_detection.epsilon must be greater than 0")
+	}
+	if p.SimSettings.Timeout <= 0 {
+		return errors.New("config error: sim_settings.timeout must be greater than 0")
+	}
+
+	if !slices.Contains([]string{"constant", "quadratic", "linear"}, p.NudgeFunc.Type) {
+		return errors.New("config error: nudge_func.type not recognized")
 	}
 
 	return nil
 }
 
-type Params struct {
-	Bounds    [][2]float64
-	Prog      *ProgramBin
-	Fraction  float64
-	MinNudge  float64
-	NudgeFunc nudge.Function
-	Err       error
-}
-
-func ParseInputFile(path string) Params {
-	pError := Params{nil, nil, -1, -1, nil, nil}
+func Load(path string) (JsonParams, error) {
 
 	file, err := os.ReadFile(path)
 	if err != nil {
-		pError.Err = err
-		return pError
+		return JsonParams{}, err
 	}
 
 	cfg := defaults()
 
 	if err = json.Unmarshal(file, &cfg); err != nil {
-		pError.Err = err
-		return pError
+		return JsonParams{}, err
 	}
 
 	if err = cfg.validate(); err != nil {
-		pError.Err = err
-		return pError
+		return JsonParams{}, err
 	}
 
-	var nudgeFunc nudge.Function
-	switch strings.ToLower(cfg.NudgeFunc.Type) {
-	case "constant":
-		nudgeFunc = nudge.NewConstantFunction(cfg.NudgeFunc.Param[0])
-	case "linear":
-		nudgeFunc = nudge.NewLinearFunction(cfg.NudgeFunc.Param[0])
-	case "quadratic":
-		nudgeFunc = nudge.NewQuadraticFunction(cfg.NudgeFunc.Param[0])
-	default:
-		pError.Err = errors.New("nudgeFunc type not recognized, check config")
-		return pError
-	}
-
-	return Params{cfg.Bounds, NewProgram(cfg.Prog.Path, cfg.Prog.Args), cfg.Fraction, cfg.MinNudge, nudgeFunc, nil}
+	return cfg, nil
 }

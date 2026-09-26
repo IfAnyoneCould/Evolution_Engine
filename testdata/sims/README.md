@@ -5,7 +5,7 @@ Simulations for testing the engine as a black box optimiser. Same protocol as
 fitness. Every sim scores in [0,1], and 0.99 only happens at or right next to
 the optimum. Wrong weight counts score 0.
 
-Each sim has a config in `configs/` with its args and bounds filled in. Paths
+Each sim has a sel in `configs/` with its args and bounds filled in. Paths
 are relative to the repo root.
 
 The python ones are stdlib only. The go ones need building first

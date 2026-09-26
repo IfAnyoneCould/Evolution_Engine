@@ -9,7 +9,7 @@
     [-5, 5],
     [-5, 5]
   ],
-  "nudge": 0.1,
+  "fraction": 0.1,
   "min_nudge": 0.01,
   "nudge_func": {"type": "quadratic", "params": [2.0]}
 }

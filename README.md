@@ -37,7 +37,7 @@ single change that made the engine usable.
 population has progressed toward the goal, so early generations explore widely
 and later ones refine instead of overshooting a good answer. The scaling curve
 sits behind a `nudge.Function` interface with constant, linear and quadratic
-implementations, selectable from config, and `min_nudge` sets a floor so the
+implementations, selectable from sel, and `min_nudge` sets a floor so the
 population can never fully stop moving.
 
 ## Configuring a run
@@ -91,7 +91,7 @@ for line in sys.stdin:
 | `reference_optimizer.py` | Not a worker — a plain Python GA over the same function, built to the same shape as the engine. It's the control: if it solves Rastrigin and the engine doesn't, the engine is the problem; if both plateau in the same place, that's just the population and mutation settings. |
 
 ```sh
-# wire the sim into a config, then
+# wire the sim into a sel, then
 go run ./cmd/engine
 
 # or run the baseline on its own
@@ -102,7 +102,7 @@ python examples/reference_optimizer.py
 
 | Package | Responsibility |
 | --- | --- |
-| `internal/config` | JSON parsing, and `SimProcess` — the worker pipe |
+| `internal/sel` | JSON parsing, and `SimProcess` — the worker pipe |
 | `internal/genome` | weight vectors, bounds, mutation |
 | `internal/population` | agents, worker pool, ranking, generation building |
 | `internal/nudge` | adaptive mutation scaling functions |
@@ -113,4 +113,4 @@ python examples/reference_optimizer.py
 Working end to end, with tests across every package. Still to do: the
 stall-detection branch in `simulation.go` is partly commented out and needs
 deciding on, and tuning parameters are hardcoded at the call site rather than
-read from config.
+read from sel.

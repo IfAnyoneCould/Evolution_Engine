@@ -118,8 +118,8 @@ func TestNewPopulation(t *testing.T) {
 	if p.BaseFraction != 0.05 {
 		t.Errorf("incorrect default nudge: expected %f, got %f", 0.05, p.BaseFraction)
 	}
-	if p.Fraction != 0.000001 {
-		t.Errorf("incorrect default min nudge: expected %f, got %f", 0.000001, p.Fraction)
+	if p.Fraction != 0.0001 {
+		t.Errorf("incorrect default min nudge: expected %f, got %f", 0.0001, p.Fraction)
 	}
 	if p.NudgeFunc == nil {
 		t.Errorf("no nudge function set")
@@ -132,7 +132,7 @@ func TestNewPopulation(t *testing.T) {
 }
 
 func TestNewPopulationConfigValues(t *testing.T) {
-	path := simConfig(t, "sum", 2, `,"nudge":0.3,"min_nudge":0.02,"nudge_func":{"type":"linear","params":[1.0]}`)
+	path := simConfig(t, "sum", 2, `,"fraction":0.3,"min_nudge":0.02,"nudge_func":{"type":"linear","params":[1.0]}`)
 	p, err := NewPopulation(4, path, 2)
 	if err != nil {
 		t.Fatalf("could not build the population: %v", err)

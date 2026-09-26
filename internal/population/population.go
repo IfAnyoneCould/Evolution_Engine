@@ -11,6 +11,7 @@ import (
 	"math"
 	"math/rand"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -43,24 +44,18 @@ func (a *Agent) Evaluate(s *config.SimProcess) error {
 type Population struct {
 	Agents       []Agent
 	ProcList     []*config.SimProcess
-	WorkerCount  int
+	WorkerCount  uint
 	TopFitness   float64
 	BaseFraction float64
 	Fraction     float64
 	NudgeFunc    nudge.Function
 	StartFitness float64
-	//GenConfig NewGenConfig
 }
 
-func NewPopulation(gCount int, path string, wCount int) (*Population, error) {
-	params := config.ParseInputFile(path)
-
-	if params.Err != nil {
-		return &Population{}, params.Err
-	}
+func NewPopulation(params config.JsonParams) (*Population, error) {
 
 	var agents []Agent
-	for range gCount {
+	for range params.RunSettings.PopulationSize {
 		a, err := NewAgent(params.Bounds)
 		if err != nil {
 			return &Population{}, err
@@ -69,15 +64,25 @@ func NewPopulation(gCount int, path string, wCount int) (*Population, error) {
 	}
 
 	var procList []*config.SimProcess
-	for range wCount {
-		sim, err := config.NewSimProcess(params.Prog.Path, params.Prog.Args)
+	for range params.Workers {
+		sim, err := config.NewSimProcess(params.Prog.Path, params.Prog.Args, params.SimSettings.Timeout)
 		if err != nil {
 			return nil, err
 		}
 		procList = append(procList, sim)
 	}
 
-	return &Population{agents, procList, wCount, -1, params.Fraction, params.MinNudge, params.NudgeFunc, 0}, nil
+	var nudgeFunc nudge.Function
+	switch strings.ToLower(params.NudgeFunc.Type) {
+	case "constant":
+		nudgeFunc = nudge.NewConstantFunction(params.NudgeFunc.Param[0])
+	case "linear":
+		nudgeFunc = nudge.NewLinearFunction(params.NudgeFunc.Param[0])
+	case "quadratic":
+		nudgeFunc = nudge.NewQuadraticFunction(params.NudgeFunc.Param[0])
+	}
+
+	return &Population{agents, procList, params.Workers, -1, params.Fraction, params.MinNudge, nudgeFunc, 0}, nil
 }
 
 func (p *Population) CalcNudge(fit float64, goal float64) float64 {
@@ -140,6 +145,7 @@ func (p *Population) RunBatch(ctx context.Context) error {
 		errList = append(errList, e)
 	}
 
+	p.Rank()
 	return errors.Join(errList...)
 }
 
@@ -156,23 +162,18 @@ func (p *Population) Rank() {
 	p.TopFitness = p.Agents[0].Fitness
 }
 
-type NewGenConfig struct {
-	Elite    int     // how many of the top should be copied over
-	Pressure float64 // 0 to 1, how much of the current generation is included
-}
-
-func (p *Population) NewGen(config *NewGenConfig, goal float64) error {
+func (p *Population) NewGen(sel config.Selection, goal float64) error {
 	p.Rank()
 
 	n := len(p.Agents)
-	cutoff := int(float64(n) * config.Pressure)
+	cutoff := int(float64(n) * sel.Pressure)
 	if cutoff < 1 {
-		return fmt.Errorf("pressure %f too low, so survivors from population of %d", config.Pressure, n)
+		return fmt.Errorf("pressure %f too low, so survivors from population of %d", sel.Pressure, n)
 	}
 
 	newAgents := make([]Agent, 0, n)
 
-	for i := 0; i < config.Elite && i < n; i++ {
+	for i := 0; i < int(sel.Elite) && i < n; i++ {
 		if p.Agents[i].Evaluated {
 			newAgents = append(newAgents, p.Agents[i])
 		}

@@ -13,7 +13,7 @@
     [0.0, 3.141592653589793],
     [0.0, 3.141592653589793]
   ],
-  "nudge": 0.1,
+  "fraction": 0.1,
   "min_nudge": 0.01,
   "nudge_func": {"type": "quadratic", "params": [2.0]}
 }

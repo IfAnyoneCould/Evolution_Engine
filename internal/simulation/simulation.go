@@ -1,6 +1,7 @@
 package simulation
 
 import (
+	"Evolution_Engine/internal/config"
 	"Evolution_Engine/internal/genome"
 	"Evolution_Engine/internal/population"
 	"context"
@@ -10,21 +11,24 @@ import (
 
 type Simulation struct {
 	Pop                    *population.Population
-	cycleMax, currentCycle int
+	cycleMax, currentCycle uint
 	targetFitness          float64
+	newGenConfig           config.Selection
+	stagnation             config.StagnationDetect
 }
 
-func NewSimulation(fitness float64, max int, count int, path string) (*Simulation, error) {
-	pop, err := population.NewPopulation(count, path, 10)
+func NewSimulation(cfg config.JsonParams) (*Simulation, error) {
+	pop, err := population.NewPopulation(cfg)
 	if err != nil {
 		return &Simulation{}, err
 	}
-	return &Simulation{pop, max, 0, fitness}, nil
+	return &Simulation{pop, cfg.RunSettings.MaxCycles, 0, cfg.RunSettings.TargetFitness, cfg.Selection, cfg.StagnationDetect}, nil
 }
 
 func (s *Simulation) Run() {
 	total := time.Now()
 	lastTop := float64(0)
+	cycleSinceImprove := 0
 	for range s.cycleMax {
 
 		ctx := context.Background()
@@ -33,6 +37,7 @@ func (s *Simulation) Run() {
 		fmt.Printf("batch took %v\n", time.Since(start))
 		if s.currentCycle == 0 {
 			s.Pop.StartFitness = s.Pop.TopFitness
+			lastTop = s.Pop.TopFitness
 		}
 		if err != nil {
 			fmt.Println(err)
@@ -46,7 +51,7 @@ func (s *Simulation) Run() {
 			_ = s.Pop.CloseSims()
 			return
 		}
-		err = s.Pop.NewGen(&population.NewGenConfig{Pressure: 0.45, Elite: 1}, s.targetFitness) //TODO add newgenconfig stuff to config file with good defaults
+		err = s.Pop.NewGen(s.newGenConfig, s.targetFitness)
 		if err != nil {
 			fmt.Println(err)
 			fmt.Printf("Simulation took %v\n", time.Since(total))
@@ -57,14 +62,19 @@ func (s *Simulation) Run() {
 		fmt.Printf("Current cycle: %d -- Max fitness: %f -- Goal Fitness: %f\n", s.currentCycle, s.Pop.TopFitness, s.targetFitness)
 		s.currentCycle++
 
-		if lastTop == s.Pop.TopFitness {
-			fmt.Printf("Simulation stalled at %f fitness on cycle %d\n", s.Pop.TopFitness, s.currentCycle)
+		if s.Pop.TopFitness-lastTop < s.stagnation.Epsilon {
+			cycleSinceImprove++
+		} else {
+			cycleSinceImprove = 0
+			lastTop = s.Pop.TopFitness
+		}
+
+		if cycleSinceImprove >= int(s.stagnation.Patience) {
+			fmt.Printf("simulation exited, didn't see a fitness improvement greater than %f in %d cycles\n", s.stagnation.Epsilon, s.stagnation.Patience)
 			_ = s.Pop.CloseSims()
 			return
 		}
-		if s.currentCycle%10 == 0 { // TODO add this config and reconfigure stagnation detection to be both more configurable and more intelligent, such as adding epsilon
-			lastTop = s.Pop.TopFitness
-		}
+
 	}
 	fmt.Printf("Reached a fitness of %f in %d cycles. Target fitness: %f\n", s.Pop.TopFitness, s.currentCycle, s.targetFitness)
 	fmt.Printf("Simulation took %v\n", time.Since(total))
