@@ -36,6 +36,11 @@ type GA struct {
 	r            *rand.Rand
 }
 
+/* TODO implement this. hardest part is fining good place to put it in the config
+func New(cfg config.JsonParams, r *rand.Rand) Optimizer{
+	switch cfg.
+} */
+
 func NewGA(params config.JsonParams, r *rand.Rand) (*GA, error) {
 	var agents []population.Agent
 	for range params.RunSettings.PopulationSize {
@@ -129,7 +134,7 @@ func (g *GA) Tell(fit []float64) error {
 }
 
 func (g *GA) Best() ([]float64, float64) {
-	return g.bestW, g.bestF
+	return slices.Clone(g.bestW), g.bestF
 }
 
 func (g *GA) newGen() error {

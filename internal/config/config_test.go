@@ -1,7 +1,6 @@
 package config
 
 import (
-	"Evolution_Engine/internal/genome"
 	"fmt"
 	"math"
 	"os"
@@ -45,20 +44,6 @@ func startSim(t *testing.T, mode string) *SimProcess {
 		t.Fatalf("could not start the test sim: %v", err)
 	}
 	return sim
-}
-
-func genomeWith(t *testing.T, weights ...float64) *genome.Genome {
-	t.Helper()
-	g := genome.NewGenome(len(weights))
-	if err := g.SetBoundsUniform(-1000, 1000); err != nil {
-		t.Fatalf("could not set bounds: %v", err)
-	}
-	for i, w := range weights {
-		if err := g.SetWeight(i, w); err != nil {
-			t.Fatalf("could not set weight %d: %v", i, err)
-		}
-	}
-	return g
 }
 
 func writeConfig(t *testing.T, body string) string {
@@ -427,7 +412,7 @@ func TestSimProcessEval(t *testing.T) {
 			sim := startSim(t, "sum")
 			defer sim.Close()
 
-			got, err := sim.Eval(genomeWith(t, tt.Weights...))
+			got, err := sim.Eval(tt.Weights)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -442,7 +427,7 @@ func TestSimProcessStaysAlive(t *testing.T) {
 	sim := startSim(t, "count")
 	defer sim.Close()
 
-	g := genomeWith(t, 1, 2)
+	g := []float64{1, 2}
 	for i := 1; i <= 5; i++ {
 		got, err := sim.Eval(g)
 		if err != nil {
@@ -458,7 +443,7 @@ func TestSimProcessSendsEveryWeight(t *testing.T) {
 	sim := startSim(t, "len")
 	defer sim.Close()
 
-	got, err := sim.Eval(genomeWith(t, 1, 2, 3, 4, 5, 6, 7))
+	got, err := sim.Eval([]float64{1, 2, 3, 4, 5, 6, 7})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -486,7 +471,7 @@ func TestSimProcessEvalErrors(t *testing.T) {
 			sim := startSim(t, tt.Mode)
 			defer sim.Close()
 
-			if _, err := sim.Eval(genomeWith(t, 1, 2)); err == nil {
+			if _, err := sim.Eval([]float64{1, 2}); err == nil {
 				t.Errorf("expected error")
 			}
 		})
@@ -510,7 +495,7 @@ func TestSimProcessTimeout(t *testing.T) {
 			}
 			defer sim.Close()
 
-			_, err = sim.Eval(genomeWith(t, 1, 2))
+			_, err = sim.Eval([]float64{1, 2})
 			if tt.WantErr && err == nil {
 				t.Errorf("expected a timeout error")
 			}
@@ -523,13 +508,13 @@ func TestSimProcessTimeout(t *testing.T) {
 
 func TestSimProcessClose(t *testing.T) {
 	sim := startSim(t, "sum")
-	if _, err := sim.Eval(genomeWith(t, 1, 1)); err != nil {
+	if _, err := sim.Eval([]float64{1, 1}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if err := sim.Close(); err != nil {
 		t.Fatalf("close failed: %v", err)
 	}
-	if _, err := sim.Eval(genomeWith(t, 1, 1)); err == nil {
+	if _, err := sim.Eval([]float64{1, 1}); err == nil {
 		t.Errorf("expected an error evaluating against a closed sim")
 	}
 }

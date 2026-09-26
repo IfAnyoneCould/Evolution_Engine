@@ -2,8 +2,10 @@ package simulation
 
 import (
 	"Evolution_Engine/internal/config"
+	"Evolution_Engine/internal/optimizers"
+	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,7 +64,7 @@ func newTestSim(t *testing.T, cfg config.JsonParams) *Simulation {
 	return s
 }
 
-func runQuiet(t *testing.T, s *Simulation) {
+func runQuiet(t *testing.T, s *Simulation) error {
 	t.Helper()
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if err != nil {
@@ -74,16 +76,33 @@ func runQuiet(t *testing.T, s *Simulation) {
 		os.Stdout = old
 		_ = devnull.Close()
 	}()
-	s.Run()
+	return s.Run()
+}
+
+func sum(ws []float64) float64 {
+	total := 0.0
+	for _, w := range ws {
+		total += w
+	}
+	return total
+}
+
+func best(s *Simulation) float64 {
+	_, f := s.GetBestWeights()
+	return f
 }
 
 func TestNewSimulation(t *testing.T) {
 	cfg := testConfig("sum", 10, 25, 20)
 	s := newTestSim(t, cfg)
-	defer s.Pop.CloseSims()
+	defer s.pool.CloseSims()
 
-	if len(s.Pop.Agents) != 20 {
-		t.Errorf("incorrect agent count: expected %d, got %d", 20, len(s.Pop.Agents))
+	ga, ok := s.opt.(*optimizers.GA)
+	if !ok {
+		t.Fatalf("expected the ga as the optimizer, got %T", s.opt)
+	}
+	if len(ga.Agents) != 20 {
+		t.Errorf("incorrect agent count: expected %d, got %d", 20, len(ga.Agents))
 	}
 	if s.cycleMax != 25 {
 		t.Errorf("incorrect cycle max: expected %d, got %d", 25, s.cycleMax)
@@ -93,9 +112,6 @@ func TestNewSimulation(t *testing.T) {
 	}
 	if s.targetFitness != 10 {
 		t.Errorf("incorrect target fitness: expected %f, got %f", 10.0, s.targetFitness)
-	}
-	if s.newGenConfig != cfg.Selection {
-		t.Errorf("incorrect selection: expected %+v, got %+v", cfg.Selection, s.newGenConfig)
 	}
 	if s.stagnation != cfg.StagnationDetect {
 		t.Errorf("incorrect stagnation detection: expected %+v, got %+v", cfg.StagnationDetect, s.stagnation)
@@ -114,8 +130,8 @@ func TestRunStopsAtTarget(t *testing.T) {
 	s := newTestSim(t, testConfig("sum", 5, 200, 20))
 	runQuiet(t, s)
 
-	if s.Pop.TopFitness < 5 {
-		t.Errorf("run ended below its target: expected at least %f, got %f", 5.0, s.Pop.TopFitness)
+	if best(s) < 5 {
+		t.Errorf("run ended below its target: expected at least %f, got %f", 5.0, best(s))
 	}
 	if s.currentCycle >= 200 {
 		t.Errorf("run used every cycle instead of stopping at the target: %d", s.currentCycle)
@@ -129,53 +145,71 @@ func TestRunStopsAtCycleMax(t *testing.T) {
 	if s.currentCycle != 5 {
 		t.Errorf("incorrect cycle count: expected %d, got %d", 5, s.currentCycle)
 	}
-	if s.Pop.TopFitness >= 1000 {
-		t.Errorf("a target of %f should be unreachable, got %f", 1000.0, s.Pop.TopFitness)
+	if best(s) >= 1000 {
+		t.Errorf("a target of %f should be unreachable, got %f", 1000.0, best(s))
 	}
 }
 
 func TestRunImproves(t *testing.T) {
 	s := newTestSim(t, testConfig("sum", 1000, 60, 20))
-	s.Random = rand.New(rand.NewSource(123456))
 	runQuiet(t, s)
 
-	if s.Pop.TopFitness < 13 {
-		t.Errorf("60 cycles barely moved the population: expected at least %f, got %f", 13.0, s.Pop.TopFitness)
+	if best(s) < 13 {
+		t.Errorf("60 cycles barely moved the population: expected at least %f, got %f", 13.0, best(s))
 	}
 }
 
 func TestRunWithFailingSim(t *testing.T) {
 	s := newTestSim(t, testConfig("garbage", 5, 50, 20))
-	runQuiet(t, s)
+	if err := runQuiet(t, s); err == nil {
+		t.Errorf("a failing sim should make Run return an error")
+	}
 
 	if s.currentCycle != 0 {
 		t.Errorf("run kept going after the sim failed: got cycle %d", s.currentCycle)
 	}
 }
 
-func TestGetBest(t *testing.T) {
+func TestGetBestWeights(t *testing.T) {
 	s := newTestSim(t, testConfig("sum", 5, 200, 20))
 	runQuiet(t, s)
 
-	best := s.GetBestAgent()
-	if best.Fitness != s.Pop.TopFitness {
-		t.Errorf("best agent is not the top of the population: expected %f, got %f", s.Pop.TopFitness, best.Fitness)
+	w, f := s.GetBestWeights()
+	if len(w) != 3 {
+		t.Errorf("incorrect weight count: expected %d, got %d", 3, len(w))
+	}
+	if math.Abs(sum(w)-f) > 1e-9 {
+		t.Errorf("best weights don't belong to the best fitness: they sum to %f, fitness %f", sum(w), f)
+	}
+}
+
+func TestWriteBestWeights(t *testing.T) {
+	cfg := testConfig("sum", 5, 200, 20)
+	cfg.Output.WeightPath = filepath.Join(t.TempDir(), "best.json")
+	s := newTestSim(t, cfg)
+	runQuiet(t, s)
+	if err := s.WriteBestWeights(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	weights := s.GetBestWeights()
-	gene := s.GetBestGenome()
-	if len(weights) != 3 {
-		t.Errorf("incorrect weight count: expected %d, got %d", 3, len(weights))
+	b, err := os.ReadFile(cfg.Output.WeightPath)
+	if err != nil {
+		t.Fatalf("no weights file written: %v", err)
 	}
-	for i, w := range gene.GetWeights() {
-		if w != weights[i] {
-			t.Errorf("genome and weights disagree at param %d: %f and %f", i, w, weights[i])
-		}
+	var got []float64
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("weights file isn't a json array: %v", err)
 	}
-	for i, w := range best.Gene.GetWeights() {
-		if w != weights[i] {
-			t.Errorf("best agent and best weights disagree at param %d: %f and %f", i, w, weights[i])
-		}
+	if want, _ := s.GetBestWeights(); !slices.Equal(got, want) {
+		t.Errorf("wrote %v, best weights are %v", got, want)
+	}
+}
+
+func TestWriteBestWeightsNoPath(t *testing.T) {
+	s := newTestSim(t, testConfig("sum", 5, 10, 10))
+	runQuiet(t, s)
+	if err := s.WriteBestWeights(); err != nil {
+		t.Errorf("no weight path should write nothing and not error, got %v", err)
 	}
 }
 
@@ -201,23 +235,14 @@ func TestRunKeepsGoingWhileImproving(t *testing.T) {
 	}
 }
 
-func TestRunSetsStartFitness(t *testing.T) {
-	cfg := testConfig("len", 1000, 3, 10)
-	s := newTestSim(t, cfg)
-	runQuiet(t, s)
-
-	if s.Pop.StartFitness != 3 {
-		t.Errorf("incorrect start fitness: expected the first generation's best of %f, got %f", 3.0, s.Pop.StartFitness)
-	}
-}
-
 func TestSameSeedSameRun(t *testing.T) {
 	run := func(seed int64) []float64 {
 		cfg := testConfig("sum", 1000, 15, 20)
 		cfg.SimSettings.RandSeed = ptr(seed)
 		s := newTestSim(t, cfg)
 		runQuiet(t, s)
-		return s.GetBestWeights()
+		w, _ := s.GetBestWeights()
+		return w
 	}
 	a, b := run(7), run(7)
 	if !slices.Equal(a, b) {
