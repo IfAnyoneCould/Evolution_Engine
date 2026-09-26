@@ -192,17 +192,17 @@ func TestLoad(t *testing.T) {
 			if cfg.Prog.Path != tt.WantProg.Path {
 				t.Errorf("program incorrect Path: expected %s, got %s", tt.WantProg.Path, cfg.Prog.Path)
 			}
-			if cfg.Fraction != tt.WantFraction {
-				t.Errorf("incorrect fraction: wanted %f, got %f", tt.WantFraction, cfg.Fraction)
+			if cfg.Mutation.Fraction != tt.WantFraction {
+				t.Errorf("incorrect fraction: wanted %f, got %f", tt.WantFraction, cfg.Mutation.Fraction)
 			}
-			if cfg.MinNudge != tt.WantMinNudge {
-				t.Errorf("incorrect min nudge: wanted %f, got %f", tt.WantMinNudge, cfg.MinNudge)
+			if cfg.Mutation.MinNudge != tt.WantMinNudge {
+				t.Errorf("incorrect min nudge: wanted %f, got %f", tt.WantMinNudge, cfg.Mutation.MinNudge)
 			}
 		})
 	}
 }
 
-func TestLoadNudgeFunc(t *testing.T) {
+func TestLoadSchedule(t *testing.T) {
 	tests := []struct {
 		Name     string
 		Path     string
@@ -211,7 +211,7 @@ func TestLoadNudgeFunc(t *testing.T) {
 		WantEnd  float64
 		WantErr  bool
 	}{
-		{"no nudge func gets the tuned default", "config_test1.json", "quadratic", 0.45, 0.2, false},
+		{"no schedule gets the tuned default", "config_test1.json", "quadratic", 0.45, 0.2, false},
 		{"hold and end set", "config_test8.json", "linear", 0.3, 0.1, false},
 		{"type is case insensitive, hold and end default to 0", "config_test9.json", "linear", 0, 0, false},
 		{"power with its exponent", "config_test10.json", "power", 0, 0, false},
@@ -231,7 +231,7 @@ func TestLoadNudgeFunc(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			n := cfg.NudgeFunc
+			n := cfg.Mutation.Schedule
 			if n.Type == nil || n.Hold == nil || n.End == nil {
 				t.Fatalf("type, hold and end should always be filled in by Load, got %+v", n)
 			}
@@ -248,13 +248,13 @@ func TestLoadNudgeFunc(t *testing.T) {
 	}
 }
 
-func TestLoadNudgeFuncExtraFields(t *testing.T) {
+func TestLoadScheduleExtraFields(t *testing.T) {
 	cfg, err := Load("config_test10.json")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.NudgeFunc.Exponent == nil || *cfg.NudgeFunc.Exponent != 3 {
-		t.Errorf("exponent not loaded: wanted 3, got %v", cfg.NudgeFunc.Exponent)
+	if cfg.Mutation.Schedule.Exponent == nil || *cfg.Mutation.Schedule.Exponent != 3 {
+		t.Errorf("exponent not loaded: wanted 3, got %v", cfg.Mutation.Schedule.Exponent)
 	}
 }
 
@@ -281,22 +281,26 @@ func TestLoadValidation(t *testing.T) {
 		{"no epsilon", `,"stagnation_detection":{"epsilon":0}`, true},
 		{"negative epsilon", `,"stagnation_detection":{"epsilon":-0.1}`, true},
 		{"no timeout", `,"sim_settings":{"timeout_ms":0}`, true},
-		{"nudge type in caps", `,"nudge_func":{"type":"QUADRATIC"}`, false},
-		{"every nudge type is accepted", `,"nudge_func":{"type":"cosine"}`, false},
-		{"hold and end inside the range", `,"nudge_func":{"type":"linear","hold":0.5,"end":0.5}`, false},
-		{"negative hold", `,"nudge_func":{"type":"linear","hold":-0.1}`, true},
-		{"hold above 1", `,"nudge_func":{"type":"linear","hold":1.5}`, true},
-		{"negative end", `,"nudge_func":{"type":"linear","end":-0.1}`, true},
-		{"end above 1", `,"nudge_func":{"type":"linear","end":1.5}`, true},
-		{"power with a good exponent", `,"nudge_func":{"type":"power","exponent":0.5}`, false},
-		{"power without an exponent", `,"nudge_func":{"type":"power"}`, true},
-		{"power exponent of 0", `,"nudge_func":{"type":"power","exponent":0}`, true},
-		{"negative power exponent", `,"nudge_func":{"type":"power","exponent":-1}`, true},
-		{"exponential with a good rate", `,"nudge_func":{"type":"exponential","rate":4}`, false},
-		{"exponential rate of 0", `,"nudge_func":{"type":"exponential","rate":0}`, true},
-		{"exponential in caps still needs a rate", `,"nudge_func":{"type":"Exponential"}`, true},
-		{"step with steps", `,"nudge_func":{"type":"step","steps":4}`, false},
-		{"step with 0 steps", `,"nudge_func":{"type":"step","steps":0}`, true},
+		{"nudge type in caps", `,"mutation":{"schedule":{"type":"QUADRATIC"}}`, false},
+		{"every nudge type is accepted", `,"mutation":{"schedule":{"type":"cosine"}}`, false},
+		{"hold and end inside the range", `,"mutation":{"schedule":{"type":"linear","hold":0.5,"end":0.5}}`, false},
+		{"negative hold", `,"mutation":{"schedule":{"type":"linear","hold":-0.1}}`, true},
+		{"hold above 1", `,"mutation":{"schedule":{"type":"linear","hold":1.5}}`, true},
+		{"negative end", `,"mutation":{"schedule":{"type":"linear","end":-0.1}}`, true},
+		{"end above 1", `,"mutation":{"schedule":{"type":"linear","end":1.5}}`, true},
+		{"power with a good exponent", `,"mutation":{"schedule":{"type":"power","exponent":0.5}}`, false},
+		{"power without an exponent", `,"mutation":{"schedule":{"type":"power"}}`, true},
+		{"power exponent of 0", `,"mutation":{"schedule":{"type":"power","exponent":0}}`, true},
+		{"negative power exponent", `,"mutation":{"schedule":{"type":"power","exponent":-1}}`, true},
+		{"exponential with a good rate", `,"mutation":{"schedule":{"type":"exponential","rate":4}}`, false},
+		{"exponential rate of 0", `,"mutation":{"schedule":{"type":"exponential","rate":0}}`, true},
+		{"exponential in caps still needs a rate", `,"mutation":{"schedule":{"type":"Exponential"}}`, true},
+		{"step with steps", `,"mutation":{"schedule":{"type":"step","steps":4}}`, false},
+		{"step with 0 steps", `,"mutation":{"schedule":{"type":"step","steps":0}}`, true},
+		{"gaussian distribution", `,"mutation":{"distribution":"gaussian"}`, false},
+		{"distribution in caps", `,"mutation":{"distribution":"GAUSSIAN"}`, false},
+		{"unknown distribution", `,"mutation":{"distribution":"cauchy"}`, true},
+		{"empty distribution", `,"mutation":{"distribution":""}`, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
@@ -327,6 +331,36 @@ func TestLoadPartialSection(t *testing.T) {
 	}
 }
 
+func TestLoadMutationDefaults(t *testing.T) {
+	cfg, err := Load("config_test3.json")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Mutation.Distribution != "uniform" {
+		t.Errorf("incorrect default distribution: wanted uniform, got %s", cfg.Mutation.Distribution)
+	}
+	if cfg.Mutation.Fraction != 0.05 || cfg.Mutation.MinNudge != 0.0005 {
+		t.Errorf("incorrect default fraction and min nudge: wanted 0.05 and 0.0005, got %f and %f", cfg.Mutation.Fraction, cfg.Mutation.MinNudge)
+	}
+}
+
+func TestLoadPartialMutation(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `{"program":{"path":"test_program.exe"},"bounds":[[-1,1]],"mutation":{"distribution":"gaussian"}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := cfg.Mutation
+	if m.Distribution != "gaussian" {
+		t.Errorf("incorrect distribution: wanted gaussian, got %s", m.Distribution)
+	}
+	if m.Fraction != 0.05 || m.MinNudge != 0.0005 {
+		t.Errorf("setting the distribution wiped fraction or min nudge: got %f and %f", m.Fraction, m.MinNudge)
+	}
+	if m.Schedule.Type == nil || *m.Schedule.Type != "quadratic" || *m.Schedule.Hold != 0.45 || *m.Schedule.End != 0.2 {
+		t.Errorf("setting the distribution lost the default schedule: got %+v", m.Schedule)
+	}
+}
+
 func TestLoadAllSettings(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `{
 		"program":{"path":"test_program.exe"},
@@ -336,7 +370,8 @@ func TestLoadAllSettings(t *testing.T) {
 		"selection":{"pressure":0.3,"elite":4},
 		"stagnation_detection":{"patience":12,"epsilon":0.002},
 		"sim_settings":{"timeout_ms":250},
-		"output":{"weight_path":"out.json"}
+		"output":{"weight_path":"out.json"},
+		"mutation":{"distribution":"gaussian","fraction":0.02,"min_nudge":0.001,"schedule":{"type":"cosine","hold":0.1,"end":0.3}}
 	}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -367,6 +402,13 @@ func TestLoadAllSettings(t *testing.T) {
 	}
 	if cfg.Output.WeightPath != want.WeightPath {
 		t.Errorf("incorrect weight path: wanted %s, got %s", want.WeightPath, cfg.Output.WeightPath)
+	}
+	m := cfg.Mutation
+	if m.Distribution != "gaussian" || m.Fraction != 0.02 || m.MinNudge != 0.001 {
+		t.Errorf("incorrect mutation: wanted gaussian, 0.02, 0.001, got %s, %f, %f", m.Distribution, m.Fraction, m.MinNudge)
+	}
+	if *m.Schedule.Type != "cosine" || *m.Schedule.Hold != 0.1 || *m.Schedule.End != 0.3 {
+		t.Errorf("incorrect schedule: wanted cosine, 0.1, 0.3, got %s, %f, %f", *m.Schedule.Type, *m.Schedule.Hold, *m.Schedule.End)
 	}
 }
 

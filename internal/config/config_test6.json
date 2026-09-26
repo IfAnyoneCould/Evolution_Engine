@@ -1,7 +1,9 @@
 {
   "program": {
-    "path":"test_program.exe"
+    "path": "test_program.exe"
   },
-  "bounds":[],
-  "fraction": 0.1
+  "bounds": [],
+  "mutation": {
+    "fraction": 0.1
+  }
 }

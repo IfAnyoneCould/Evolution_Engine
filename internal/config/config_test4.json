@@ -1,11 +1,13 @@
 {
   "program": {
-    "path":"test_program.exe",
-    "args":["-v","--seed","42"]
+    "path": "test_program.exe",
+    "args": ["-v", "--seed", "42"]
   },
-  "bounds":[
-    [-1,1],
-    [0,5]
+  "bounds": [
+    [-1, 1],
+    [0, 5]
   ],
-  "fraction": 0.1
+  "mutation": {
+    "fraction": 0.1
+  }
 }

@@ -2,7 +2,11 @@
   "program": {
     "path": "TestRun.exe"
   },
-  "bounds":
-  [[-1,1],[-1,1]],
-  "fraction": 0.01
+  "bounds": [
+    [-1, 1],
+    [-1, 1]
+  ],
+  "mutation": {
+    "fraction": 0.01
+  }
 }

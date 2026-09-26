@@ -2,6 +2,7 @@ package nudge
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -161,5 +162,163 @@ func TestExponentialFlattensToLinear(t *testing.T) {
 		if got, want := e.Get(u), 1-u; math.Abs(got-want) > 1e-4 {
 			t.Errorf("tiny rate should be close to linear at %f: expected %f, got %f", u, want, got)
 		}
+	}
+}
+
+func distributions() []struct {
+	name string
+	d    Distribution
+} {
+	return []struct {
+		name string
+		d    Distribution
+	}{
+		{"uniform", NewUniformDistribution()},
+		{"gaussian", NewGaussianDistribution()},
+	}
+}
+
+func TestMutateStaysInBounds(t *testing.T) {
+	tests := []struct {
+		name      string
+		w, lo, hi float64
+		size      float64
+	}{
+		{"middle, small", 0, -1, 1, 0.05},
+		{"on the upper bound", 1, -1, 1, 0.3},
+		{"on the lower bound", -1, -1, 1, 0.3},
+		{"asymmetric range", 2, 0, 10, 0.2},
+		{"negative range", -75, -100, -50, 0.5},
+		{"size bigger than the range", 0.9, -1, 1, 5},
+	}
+	for _, dist := range distributions() {
+		for _, tt := range tests {
+			t.Run(dist.name+" "+tt.name, func(t *testing.T) {
+				r := rand.New(rand.NewSource(1))
+				for range 2000 {
+					if x := dist.d.Mutate(tt.w, tt.lo, tt.hi, tt.size, r); x < tt.lo || x > tt.hi || math.IsNaN(x) {
+						t.Fatalf("mutated weight %f outside [%f, %f]", x, tt.lo, tt.hi)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestMutateFixedParamAndZeroSize(t *testing.T) {
+	for _, dist := range distributions() {
+		t.Run(dist.name, func(t *testing.T) {
+			r := rand.New(rand.NewSource(1))
+			if x := dist.d.Mutate(5, 5, 5, 1, r); x != 5 {
+				t.Errorf("fixed param moved: expected %f, got %f", 5.0, x)
+			}
+			if x := dist.d.Mutate(0.3, -1, 1, 0, r); x != 0.3 {
+				t.Errorf("a size of 0 moved the weight: expected %f, got %f", 0.3, x)
+			}
+		})
+	}
+}
+
+// the result has to be near w, not somewhere tied to the range. a range that isn't centred on 0 catches that
+func TestMutateStartsFromTheWeight(t *testing.T) {
+	tests := []struct {
+		name    string
+		d       Distribution
+		maxDist float64
+	}{
+		{"uniform never moves past size times range", NewUniformDistribution(), 0.1},
+		{"gaussian stays within 6 sigma", NewGaussianDistribution(), 0.6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := rand.New(rand.NewSource(1))
+			for range 2000 {
+				if x := tt.d.Mutate(2, 0, 10, 0.01, r); math.Abs(x-2) > tt.maxDist {
+					t.Fatalf("weight 2 on [0,10] with size 0.01 moved to %f", x)
+				}
+			}
+		})
+	}
+}
+
+func stats(d Distribution, n int) (mean, std float64, xs []float64) {
+	r := rand.New(rand.NewSource(1))
+	xs = make([]float64, n)
+	for i := range xs {
+		xs[i] = d.Mutate(0, -1000, 1000, 0.001, r)
+		mean += xs[i]
+	}
+	mean /= float64(n)
+	for _, x := range xs {
+		std += (x - mean) * (x - mean)
+	}
+	return mean, math.Sqrt(std / float64(n)), xs
+}
+
+// size 0.001 on a range of 2000 is a step of 2, far from the bounds so nothing gets clamped or reflected
+func TestUniformStepShape(t *testing.T) {
+	mean, std, xs := stats(NewUniformDistribution(), 20000)
+	for _, x := range xs {
+		if math.Abs(x) > 2 {
+			t.Fatalf("uniform step of %f is past the cap of 2", x)
+		}
+	}
+	if math.Abs(mean) > 0.05 {
+		t.Errorf("uniform steps should average 0, got %f", mean)
+	}
+	if want := 2 / math.Sqrt(3); math.Abs(std-want) > 0.03*want {
+		t.Errorf("uniform spread should be %f, got %f", want, std)
+	}
+}
+
+func TestGaussianStepShape(t *testing.T) {
+	mean, std, xs := stats(NewGaussianDistribution(), 20000)
+	if math.Abs(mean) > 0.06 {
+		t.Errorf("gaussian steps should average 0, got %f", mean)
+	}
+	if math.Abs(std-2) > 0.06 {
+		t.Errorf("gaussian sigma should be %f, got %f", 2.0, std)
+	}
+	within := 0
+	for _, x := range xs {
+		if math.Abs(x) <= 2 {
+			within++
+		}
+	}
+	if frac := float64(within) / float64(len(xs)); math.Abs(frac-0.6827) > 0.02 {
+		t.Errorf("about 68%% of gaussian steps should be within one sigma, got %.1f%%", frac*100)
+	}
+}
+
+// clamping piles every overshoot onto the bound, reflecting shouldn't leave anything sitting exactly on it
+func TestGaussianDoesNotPileUpOnTheBound(t *testing.T) {
+	onBound := func(d Distribution) float64 {
+		r := rand.New(rand.NewSource(1))
+		n := 0
+		for range 2000 {
+			if d.Mutate(1, -1, 1, 0.3, r) == 1 {
+				n++
+			}
+		}
+		return float64(n) / 2000
+	}
+	if frac := onBound(NewGaussianDistribution()); frac > 0.001 {
+		t.Errorf("gaussian left %.1f%% of weights exactly on the bound, it should reflect them back in", frac*100)
+	}
+	if frac := onBound(NewUniformDistribution()); frac < 0.3 {
+		t.Errorf("uniform should clamp about half its steps onto the bound from there, got %.1f%%", frac*100)
+	}
+}
+
+func TestMutateSameSeed(t *testing.T) {
+	for _, dist := range distributions() {
+		t.Run(dist.name, func(t *testing.T) {
+			a, b := rand.New(rand.NewSource(7)), rand.New(rand.NewSource(7))
+			for range 100 {
+				if x, y := dist.d.Mutate(0, -1, 1, 0.1, a), dist.d.Mutate(0, -1, 1, 0.1, b); x != y {
+					t.Fatalf("same seed gave %f and %f", x, y)
+				}
+			}
+		})
 	}
 }

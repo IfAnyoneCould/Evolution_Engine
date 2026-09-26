@@ -1,6 +1,8 @@
 {
   "program": {
-    "path":"test_program.exe"
+    "path": "test_program.exe"
   },
-  "fraction": 0.1
+  "mutation": {
+    "fraction": 0.1
+  }
 }

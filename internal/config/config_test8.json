@@ -1,16 +1,18 @@
 {
   "program": {
-    "path":"test_program.exe"
+    "path": "test_program.exe"
   },
-  "bounds":[
-    [-1,1],
-    [-1,1]
+  "bounds": [
+    [-1, 1],
+    [-1, 1]
   ],
-  "fraction": 0.2,
-  "min_nudge": 0.01,
-  "nudge_func": {
-    "type": "linear",
-    "hold": 0.3,
-    "end": 0.1
+  "mutation": {
+    "fraction": 0.2,
+    "min_nudge": 0.01,
+    "schedule": {
+      "type": "linear",
+      "hold": 0.3,
+      "end": 0.1
+    }
   }
 }

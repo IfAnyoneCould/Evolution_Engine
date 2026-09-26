@@ -1,10 +1,12 @@
 {
   "program": {
-    "path":"test_program.exe"
+    "path": "test_program.exe"
   },
-  "bounds":[
-    [-1,1]
+  "bounds": [
+    [-1, 1]
   ],
-  "fraction": 0,
-  "min_nudge": 0
+  "mutation": {
+    "fraction": 0,
+    "min_nudge": 0
+  }
 }

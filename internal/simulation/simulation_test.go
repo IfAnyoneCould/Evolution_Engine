@@ -37,11 +37,14 @@ func testConfig(mode string, target float64, cycles int, agents int) config.Json
 		bounds[i] = [2]float64{-5, 5}
 	}
 	return config.JsonParams{
-		Prog:             config.Program{Path: simBin, Args: []string{mode}},
-		Bounds:           bounds,
-		Fraction:         0.05,
-		MinNudge:         0.0001,
-		NudgeFunc:        config.NudgeFunc{Type: ptr("constant"), Hold: ptr(0.0), End: ptr(0.0)},
+		Prog:   config.Program{Path: simBin, Args: []string{mode}},
+		Bounds: bounds,
+		Mutation: config.Mutation{
+			Distribution: "uniform",
+			Fraction:     0.05,
+			MinNudge:     0.0001,
+			Schedule:     config.Schedule{Type: ptr("constant"), Hold: ptr(0.0), End: ptr(0.0)},
+		},
 		RunSettings:      config.RunSettings{TargetFitness: target, MaxCycles: uint(cycles), PopulationSize: uint(agents)},
 		Workers:          4,
 		Selection:        config.Selection{Pressure: 0.45, Elite: 2},

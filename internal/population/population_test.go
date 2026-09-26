@@ -41,11 +41,14 @@ func testConfig(mode string, dims int, agents int, workers int) config.JsonParam
 		bounds[i] = [2]float64{-5, 5}
 	}
 	return config.JsonParams{
-		Prog:             config.Program{Path: simBin, Args: []string{mode}},
-		Bounds:           bounds,
-		Fraction:         0.05,
-		MinNudge:         0.0001,
-		NudgeFunc:        config.NudgeFunc{Type: ptr("constant"), Hold: ptr(0.0), End: ptr(0.0)},
+		Prog:   config.Program{Path: simBin, Args: []string{mode}},
+		Bounds: bounds,
+		Mutation: config.Mutation{
+			Distribution: "uniform",
+			Fraction:     0.05,
+			MinNudge:     0.0001,
+			Schedule:     config.Schedule{Type: ptr("constant"), Hold: ptr(0.0), End: ptr(0.0)},
+		},
 		RunSettings:      config.RunSettings{TargetFitness: 1000, MaxCycles: 10, PopulationSize: uint(agents)},
 		Workers:          uint(workers),
 		Selection:        config.Selection{Pressure: 0.45, Elite: 1},
@@ -141,29 +144,29 @@ func TestNewPopulation(t *testing.T) {
 	}
 }
 
-func TestNewPopulationNudgeFunc(t *testing.T) {
+func TestNewPopulationSchedule(t *testing.T) {
 	tests := []struct {
 		name     string
-		function config.NudgeFunc
+		function config.Schedule
 		progress float64
 		want     float64
 	}{
-		{"constant", config.NudgeFunc{Type: ptr("constant")}, 0.9, 1},
-		{"linear", config.NudgeFunc{Type: ptr("linear")}, 0.25, 0.75},
-		{"quadratic", config.NudgeFunc{Type: ptr("quadratic")}, 0.5, 0.25},
-		{"power", config.NudgeFunc{Type: ptr("power"), Exponent: ptr(3.0)}, 0.5, 0.125},
-		{"exponential", config.NudgeFunc{Type: ptr("exponential"), Rate: ptr(4.0)}, 1, 0},
-		{"cosine", config.NudgeFunc{Type: ptr("cosine")}, 0.5, 0.5},
-		{"step", config.NudgeFunc{Type: ptr("step"), Steps: ptr(uint(4))}, 0.3, 0.75},
-		{"type is case insensitive", config.NudgeFunc{Type: ptr("LINEAR")}, 0.25, 0.75},
+		{"constant", config.Schedule{Type: ptr("constant")}, 0.9, 1},
+		{"linear", config.Schedule{Type: ptr("linear")}, 0.25, 0.75},
+		{"quadratic", config.Schedule{Type: ptr("quadratic")}, 0.5, 0.25},
+		{"power", config.Schedule{Type: ptr("power"), Exponent: ptr(3.0)}, 0.5, 0.125},
+		{"exponential", config.Schedule{Type: ptr("exponential"), Rate: ptr(4.0)}, 1, 0},
+		{"cosine", config.Schedule{Type: ptr("cosine")}, 0.5, 0.5},
+		{"step", config.Schedule{Type: ptr("step"), Steps: ptr(uint(4))}, 0.3, 0.75},
+		{"type is case insensitive", config.Schedule{Type: ptr("LINEAR")}, 0.25, 0.75},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := testConfig("sum", 2, 4, 1)
-			cfg.Fraction = 0.3
-			cfg.MinNudge = 0.02
+			cfg.Mutation.Fraction = 0.3
+			cfg.Mutation.MinNudge = 0.02
 			tt.function.Hold, tt.function.End = ptr(0.1), ptr(0.2)
-			cfg.NudgeFunc = tt.function
+			cfg.Mutation.Schedule = tt.function
 			p, err := NewPopulation(cfg, testRand)
 			if err != nil {
 				t.Fatalf("could not build the population: %v", err)
@@ -189,11 +192,75 @@ func TestNewPopulationNudgeFunc(t *testing.T) {
 	}
 }
 
-func TestNewPopulationUnknownNudgeFunc(t *testing.T) {
+func TestNewPopulationUnknownSchedule(t *testing.T) {
 	cfg := testConfig("sum", 2, 4, 1)
-	cfg.NudgeFunc.Type = ptr("sawtooth")
+	cfg.Mutation.Schedule.Type = ptr("sawtooth")
 	if _, err := NewPopulation(cfg, testRand); err == nil {
 		t.Errorf("expected error")
+	}
+}
+
+func TestNewPopulationDistribution(t *testing.T) {
+	tests := []struct {
+		name     string
+		dist     string
+		gaussian bool
+	}{
+		{"uniform", "uniform", false},
+		{"gaussian", "gaussian", true},
+		{"case insensitive", "GAUSSIAN", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig("sum", 3, 10, 2)
+			cfg.Mutation.Distribution = tt.dist
+			p, err := NewPopulation(cfg, testRand)
+			if err != nil {
+				t.Fatalf("could not build the population: %v", err)
+			}
+			defer p.CloseSims()
+
+			switch p.Distribution.(type) {
+			case *nudge.Gaussian:
+				if !tt.gaussian {
+					t.Errorf("wanted a uniform distribution, got gaussian")
+				}
+			case *nudge.Uniform:
+				if tt.gaussian {
+					t.Errorf("wanted a gaussian distribution, got uniform")
+				}
+			default:
+				t.Fatalf("no distribution set, got %T", p.Distribution)
+			}
+
+			if err := p.RunBatch(context.Background()); err != nil {
+				t.Fatalf("could not run the first batch: %v", err)
+			}
+			if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.5}, 1000, testRand); err != nil {
+				t.Fatalf("NewGen failed: %v", err)
+			}
+			for i, a := range p.Agents {
+				for j, param := range a.Gene.Params {
+					if param.Weight < param.Lower || param.Weight > param.Upper {
+						t.Errorf("agent %d param %d: weight %f outside bounds", i, j, param.Weight)
+					}
+				}
+			}
+		})
+	}
+}
+
+// a config built in code skips validate, so an unknown or missing distribution has to fail here instead of
+// leaving a nil distribution for NewGen to panic on
+func TestNewPopulationBadDistribution(t *testing.T) {
+	for _, dist := range []string{"cauchy", ""} {
+		cfg := testConfig("sum", 3, 10, 2)
+		cfg.Mutation.Distribution = dist
+		p, err := NewPopulation(cfg, testRand)
+		if err == nil {
+			_ = p.CloseSims()
+			t.Errorf("distribution %q should be an error", dist)
+		}
 	}
 }
 
@@ -498,7 +565,7 @@ func TestNewGenChildrenAreOwnGenomes(t *testing.T) {
 	}
 
 	before := p.Agents[len(p.Agents)-1].Gene.GetWeights()
-	p.Agents[0].Gene.Nudge(1.0, testRand)
+	p.Agents[0].Gene.Nudge(1.0, nudge.NewUniformDistribution(), testRand)
 	after := p.Agents[len(p.Agents)-1].Gene.GetWeights()
 	for i := range before {
 		if before[i] != after[i] {
