@@ -5,6 +5,7 @@ import (
 	"Evolution_Engine/internal/nudge"
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -86,98 +87,169 @@ func (s *SimProcess) Close() error {
 	return s.Proc.Wait()
 }
 
-type JsonParams struct {
-	Prog struct {
-		Path string   `json:"path"`
-		Args []string `json:"args"`
-	} `json:"program"`
-	Bounds    [][2]float64 `json:"bounds"`
-	Nudge     float64      `json:"nudge"`
-	MinNudge  float64      `json:"min_nudge"`
-	NudgeFunc *struct {
-		Type  *string   `json:"type"`
-		Param []float64 `json:"params"`
-	} `json:"nudge_func"`
+type Program struct {
+	Path string   `json:"path"`
+	Args []string `json:"args"`
 }
+
+type NudgeFunc struct {
+	Type  string    `json:"type"`
+	Param []float64 `json:"params"`
+}
+
+type RunSettings struct {
+	TargetFitness  float64 `json:"target_fitness"`
+	MaxCycles      uint32  `json:"max_cycles"`
+	PopulationSize uint32  `json:"population_size"`
+}
+
+type Selection struct {
+	Pressure float64 `json:"pressure"`
+	Elite    uint32  `json:"elite"`
+}
+
+type StagnationDetect struct {
+	Interval uint32  `json:"interval"`
+	Epsilon  float64 `json:"epsilon"`
+}
+
+type SimSettings struct {
+	Timeout float64 `json:"timeout_ms"`
+	//TODO add robustness settings later, such as retry count, etc.
+}
+
+type Output struct {
+	WeighPath string `json:"weight_path"`
+	//TODO add history control and pathing
+}
+
+type JsonParams struct {
+	Prog             Program          `json:"program"`
+	Bounds           [][2]float64     `json:"bounds"`
+	Fraction         float64          `json:"fraction"`
+	MinNudge         float64          `json:"min_nudge"`
+	NudgeFunc        NudgeFunc        `json:"nudge_func"`
+	RunSettings      RunSettings      `json:"run_settings"`
+	Workers          uint32           `json:"workers"`
+	Selection        Selection        `json:"selection"`
+	StagnationDetect StagnationDetect `json:"stagnation_detection"`
+	SimSettings      SimSettings      `json:"sim_settings"`
+	Output           Output           `json:"output"`
+}
+
+func defaults() JsonParams {
+	prog := Program{
+		Path: "",
+		Args: []string{},
+	}
+	nudgeFunc := NudgeFunc{
+		Type:  "Constant",
+		Param: []float64{1},
+	}
+	runSettings := RunSettings{
+		TargetFitness:  0.99,
+		MaxCycles:      500,
+		PopulationSize: 100,
+	}
+	selection := Selection{
+		Pressure: 0.45,
+		Elite:    2,
+	}
+	stagnant := StagnationDetect{
+		Interval: 50,
+		Epsilon:  0.01,
+	}
+	simSettings := SimSettings{
+		Timeout: 500,
+	}
+	output := Output{
+		WeighPath: "",
+	}
+
+	return JsonParams{
+		Prog:             prog,
+		Bounds:           nil,
+		Fraction:         0.05,
+		MinNudge:         0.0001,
+		NudgeFunc:        nudgeFunc,
+		RunSettings:      runSettings,
+		Workers:          10,
+		Selection:        selection,
+		StagnationDetect: stagnant,
+		SimSettings:      simSettings,
+		Output:           output,
+	}
+
+}
+
+func (p JsonParams) validate() error {
+	if p.Prog.Path == "" {
+		return errors.New("config error: program.path required")
+	}
+	if len(p.Bounds) == 0 {
+		return errors.New("config error: bounds is required")
+	}
+	if len(p.NudgeFunc.Param) < 1 {
+		return errors.New("config error: nudge_func.params needs at least 1 value")
+	}
+	if p.Workers <= 0 {
+		return errors.New("config error: worker count needs to be above 0")
+	}
+	if p.RunSettings.PopulationSize <= 0 {
+		return errors.New("config error: run_settings.population_size needs to be greater than 0")
+	}
+	if p.RunSettings.PopulationSize <= p.Selection.Elite {
+		return errors.New("config error: selection.elite cannot be greater than or equal to run_settings.population_size")
+	}
+	if p.Selection.Pressure < 0 || p.Selection.Pressure >= 1 {
+		return errors.New("config error: invalid range for selection.pressure")
+	}
+
+	return nil
+}
+
 type Params struct {
 	Bounds    [][2]float64
 	Prog      *ProgramBin
 	Fraction  float64
 	MinNudge  float64
 	NudgeFunc nudge.Function
-	err       error
+	Err       error
 }
 
-func ParseInputFile(p ...string) ([][2]float64, *ProgramBin, float64, float64, nudge.Function, error) { // TODO make this return a struct, dealing with this is annoying. Alternatively, just have it return the population, as that's the only place this function is ever used
-	defaultPath := "data/simInfo.json"
-	var path string
-	switch len(p) {
-	case 0:
-		path = defaultPath
-	case 1:
-		path = p[0]
-	default:
-		err := fmt.Errorf("illegal number of arguments: expected 0 or 1, got %d", len(p))
-		return nil, nil, -1, -1, nil, err
-	}
+func ParseInputFile(path string) Params {
+	pError := Params{nil, nil, -1, -1, nil, nil}
 
 	file, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, -1, -1, nil, err
+		pError.Err = err
+		return pError
 	}
 
-	var cfg struct { //TODO pull this out and make it a separate struct, though don't export it
-		Prog struct {
-			Path string   `json:"path"`
-			Args []string `json:"args"`
-		} `json:"program"`
-		Bounds    [][2]float64 `json:"bounds"`
-		Nudge     float64      `json:"nudge"`
-		MinNudge  float64      `json:"min_nudge"`
-		NudgeFunc *struct {
-			Type  *string   `json:"type"`
-			Param []float64 `json:"params"`
-		} `json:"nudge_func"`
+	cfg := defaults()
+
+	if err = json.Unmarshal(file, &cfg); err != nil {
+		pError.Err = err
+		return pError
 	}
 
-	if err := json.Unmarshal(file, &cfg); err != nil {
-		return nil, nil, -1, -1, nil, err
-	}
-
-	if len(cfg.Bounds) == 0 {
-		return nil, nil, -1, -1, nil, fmt.Errorf("no bounds data, check config")
-	}
-
-	args := cfg.Prog.Args
-	if args == nil {
-		args = []string{}
-	}
-
-	if cfg.Nudge == 0 {
-		cfg.Nudge = 0.05 // TODO make all defaults present in a default struct, so that i don't have to do this everytime I add a new parameter
-	}
-
-	if cfg.MinNudge == 0 {
-		cfg.MinNudge = 0.000001 // TODO add this to config
+	if err = cfg.validate(); err != nil {
+		pError.Err = err
+		return pError
 	}
 
 	var nudgeFunc nudge.Function
-	nudgeFunc = nudge.NewConstantFunction(1)
-	if cfg.NudgeFunc != nil {
-		if cfg.NudgeFunc.Type == nil || len(cfg.NudgeFunc.Param) < 1 {
-			return nil, nil, -1, -1, nil, fmt.Errorf("missing nudgeFunc data, check config")
-		}
-		switch strings.ToLower(*cfg.NudgeFunc.Type) {
-		case "constant":
-			nudgeFunc = nudge.NewConstantFunction(cfg.NudgeFunc.Param[0])
-		case "linear":
-			nudgeFunc = nudge.NewLinearFunction(cfg.NudgeFunc.Param[0])
-		case "quadratic":
-			nudgeFunc = nudge.NewQuadraticFunction(cfg.NudgeFunc.Param[0])
-		default:
-			return nil, nil, -1, -1, nil, fmt.Errorf("nudgeFunc type not recognize, check config")
-		}
+	switch strings.ToLower(cfg.NudgeFunc.Type) {
+	case "constant":
+		nudgeFunc = nudge.NewConstantFunction(cfg.NudgeFunc.Param[0])
+	case "linear":
+		nudgeFunc = nudge.NewLinearFunction(cfg.NudgeFunc.Param[0])
+	case "quadratic":
+		nudgeFunc = nudge.NewQuadraticFunction(cfg.NudgeFunc.Param[0])
+	default:
+		pError.Err = errors.New("nudgeFunc type not recognized, check config")
+		return pError
 	}
 
-	return cfg.Bounds, NewProgram(cfg.Prog.Path, args), cfg.Nudge, cfg.MinNudge, nudgeFunc, nil
+	return Params{cfg.Bounds, NewProgram(cfg.Prog.Path, cfg.Prog.Args), cfg.Fraction, cfg.MinNudge, nudgeFunc, nil}
 }

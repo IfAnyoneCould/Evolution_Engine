@@ -53,15 +53,15 @@ type Population struct {
 }
 
 func NewPopulation(gCount int, path string, wCount int) (*Population, error) {
-	bounds, prog, n, minN, nFunc, err := config.ParseInputFile(path)
+	params := config.ParseInputFile(path)
 
-	if err != nil {
-		return &Population{}, err
+	if params.Err != nil {
+		return &Population{}, params.Err
 	}
 
 	var agents []Agent
 	for range gCount {
-		a, err := NewAgent(bounds)
+		a, err := NewAgent(params.Bounds)
 		if err != nil {
 			return &Population{}, err
 		}
@@ -70,14 +70,14 @@ func NewPopulation(gCount int, path string, wCount int) (*Population, error) {
 
 	var procList []*config.SimProcess
 	for range wCount {
-		sim, err := config.NewSimProcess(prog.Path, prog.Args)
+		sim, err := config.NewSimProcess(params.Prog.Path, params.Prog.Args)
 		if err != nil {
 			return nil, err
 		}
 		procList = append(procList, sim)
 	}
 
-	return &Population{agents, procList, wCount, -1, n, minN, nFunc, 0}, nil
+	return &Population{agents, procList, wCount, -1, params.Fraction, params.MinNudge, params.NudgeFunc, 0}, nil
 }
 
 func (p *Population) CalcNudge(fit float64, goal float64) float64 {
