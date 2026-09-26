@@ -266,7 +266,7 @@ func (p JsonParams) validate() error {
 					return errors.New("config error: if mutation.schedule.type is 'power', then mutation.schedule.exponent is required")
 				}
 				if *p.Mutation.Schedule.Exponent <= 0 {
-					return errors.New("config error: mutatioin.schedule.exponent must be greater than 0")
+					return errors.New("config error: mutation.schedule.exponent must be greater than 0")
 				}
 				if p.Mutation.Schedule.Rate != nil || p.Mutation.Schedule.Steps != nil {
 					return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as power")

@@ -17,7 +17,8 @@ Smallest working config:
 ```
 
 Paths (`program.path`, `output.weight_path`) are relative to the directory the engine is run from, not to the config
-file. Keys are case sensitive and unknown keys are ignored, so a misspelled key silently falls back to its default.
+file. Keys are case sensitive, and an unknown or misspelled key is an error, so a typo fails on load instead of
+quietly falling back to a default.
 
 ___
 
@@ -37,11 +38,10 @@ to hold a weight fixed. Lower above upper errors when the run starts.
 
 ---
 
-### Mutation
+### mutation
 
-Every child is a copy of a parent with each weight moved by a random amount, uniform in ±(nudge size × that weight's
-range), then clamped to its bounds. The nudge size follows a schedule that shrinks as the parent gets closer to the
-target:
+Every child is a copy of a parent with each weight moved by a random step, sized by the schedule below and shaped by
+the distribution. The nudge size shrinks as the parent gets closer to the target:
 
 ```
 u          = clamp((progress - hold) / (1 - hold), 0, 1)
@@ -52,18 +52,27 @@ nudge size = max(fraction × f, min_nudge)
 progress runs from 0 at the first generation's best fitness to 1 at `run_settings.target_fitness`. Until progress
 reaches hold the nudge stays at full size, then the shape takes it down to end by the target.
 
-- fraction (float64) &rarr; the largest nudge, as a fraction of each weight's range. 0.05 on [-1,1] moves a weight by
-  at most ±0.1. Default `0.05`
+- distribution (string) &rarr; how each step is drawn, case insensitive. Default `uniform`
+  - `uniform` &rarr; any step up to ±(nudge size × the weight's range) is equally likely. Anything past a bound gets
+    clamped onto it
+  - `gaussian` &rarr; a bell curve with a standard deviation of nudge size × the weight's range. Most steps are small,
+    a few are big, so it refines well and can still jump out of a local optimum late in a run. Anything past a bound
+    gets reflected back in by the same distance, so weights don't pile up on the edges. Its steps average about 1.7×
+    uniform's at the same fraction
+- fraction (float64) &rarr; the full nudge size, as a fraction of each weight's range. 0.05 on [-1,1] is a step of up
+  to ±0.1 for uniform, or a standard deviation of 0.1 for gaussian. Default `0.05`
 - min_nudge (float64) &rarr; floor on the nudge size, same units as fraction. With end above 0 the schedule already
   has a floor of fraction × end, so this only matters when that's smaller. Above fraction it just becomes the nudge
   size for the whole run. Default `0.0005`
-- nudge_func &rarr; the schedule. Only give the fields the type uses
+- schedule &rarr; how the nudge size changes over the run
   - type (string) &rarr; one of the types below, case insensitive
   - hold (float64) &rarr; progress where the decay starts, 0 to 1. 1 never decays
   - end (float64) &rarr; the nudge at the target, as a fraction of the full nudge, 0 to 1
   - exponent (float64) &rarr; power only, above 0
   - rate (float64) &rarr; exponential only, above 0
   - steps (uint) &rarr; step only, 1 or more
+
+  exponent, rate and steps are an error on a type that doesn't use them.
 
 | type | shape(u) | needs | how it behaves |
 | --- | --- | --- | --- |
@@ -75,9 +84,12 @@ reaches hold the nudge stays at full size, then the shape takes it down to end b
 | cosine | (1 + cos(π·u)) / 2 | | slow at the start, fastest in the middle, slow at the end |
 | step | 1 − floor(u·steps) / steps | steps | drops in equal jumps and stays flat between them. 1 step is full nudge until the target |
 
-Defaults: leave out nudge_func and it's quadratic with hold 0.45 and end 0.2, which keeps the full nudge until 45%
+Defaults: leave out schedule and it's quadratic with hold 0.45 and end 0.2, which keeps the full nudge until 45%
 progress and ends at 20% of it. Give a type and hold and end default to 0 instead, so the schedule decays from the
-first generation all the way down, unless you set them.
+first generation all the way down, unless you set them. Setting one field in mutation, like just distribution, keeps
+the defaults for the rest.
+
+The defaults were tuned with uniform, so gaussian will probably want a smaller fraction.
 
 ---
 
@@ -144,9 +156,12 @@ last real improvement by more than epsilon.
 {
   "program": { "path": "cmd/engine/TestRun.exe", "args": [] },
   "bounds": [[-5.12, 5.12], [-5.12, 5.12]],
-  "fraction": 0.05,
-  "min_nudge": 0.0005,
-  "nudge_func": { "type": "quadratic", "hold": 0.45, "end": 0.2 },
+  "mutation": {
+    "distribution": "uniform",
+    "fraction": 0.05,
+    "min_nudge": 0.0005,
+    "schedule": { "type": "quadratic", "hold": 0.45, "end": 0.2 }
+  },
   "run_settings": { "target_fitness": 0.99, "max_cycles": 500, "population_size": 60 },
   "workers": 10,
   "selection": { "pressure": 0.45, "elite": 1 },

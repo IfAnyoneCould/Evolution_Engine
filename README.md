@@ -35,20 +35,18 @@ single change that made the engine usable.
 
 **Adaptive mutation ("nudge").** The mutation magnitude scales with how far the
 population has progressed toward the goal, so early generations explore widely
-and later ones refine instead of overshooting a good answer. The scaling curve
-sits behind a `nudge.Function` interface with constant, linear and quadratic
-implementations, selectable from sel, and `min_nudge` sets a floor so the
-population can never fully stop moving.
+and later ones refine instead of overshooting a good answer. The schedule holds
+the full nudge for a while, then decays it along one of seven curves (constant,
+linear, quadratic, power, exponential, cosine, step). Steps are drawn from a
+uniform or gaussian distribution, and `min_nudge` sets a floor so the population
+can never fully stop moving. All of it is set from the config.
 
 ## Configuring a run
 
 ```json
 {
   "program": { "path": "cmd/engine/TestRun.exe", "args": ["8", "0", "5.12"] },
-  "bounds": [[-5.12, 5.12], [-5.12, 5.12]],
-  "nudge": 0.1,
-  "min_nudge": 0.01,
-  "nudge_func": { "type": "quadratic", "params": [2.0] }
+  "bounds": [[-5.12, 5.12], [-5.12, 5.12]]
 }
 ```
 
@@ -57,12 +55,18 @@ legal range of each weight. The bundled example optimises the Rastrigin
 function in 8 dimensions — a standard benchmark chosen because it's covered in
 local minima and will expose an optimiser that converges too early.
 
+Only `program` and `bounds` are required, everything else has a tuned default.
+Every option is in [config.md](config.md).
+
 ## Running
 
 ```sh
-go run ./cmd/engine
+go run ./cmd/engine cmd/engine/main_test.json
 go test ./...
 ```
+
+`testdata/sims` has 66 more sims, each with a ready config in
+`testdata/sims/configs`. They're listed in the README in there.
 
 The tests drive real worker processes. `testdata/sim` is a small stand-in
 program they build once per package and talk to over the same pipe a real
@@ -71,7 +75,7 @@ simulation would use, so nothing in the suite needs Python installed.
 ## Writing a program to optimise
 
 Loop forever: read one line, parse it as a JSON array of floats, print your
-fitness, flush. Higher is better.
+fitness, flush. Fitness is between 0 and 1, higher is better.
 
 ```python
 import sys, json
@@ -91,8 +95,8 @@ for line in sys.stdin:
 | `reference_optimizer.py` | Not a worker — a plain Python GA over the same function, built to the same shape as the engine. It's the control: if it solves Rastrigin and the engine doesn't, the engine is the problem; if both plateau in the same place, that's just the population and mutation settings. |
 
 ```sh
-# wire the sim into a sel, then
-go run ./cmd/engine
+# point a config at the sim, then
+go run ./cmd/engine path/to/config.json
 
 # or run the baseline on its own
 python examples/reference_optimizer.py
@@ -102,15 +106,15 @@ python examples/reference_optimizer.py
 
 | Package | Responsibility |
 | --- | --- |
-| `internal/sel` | JSON parsing, and `SimProcess` — the worker pipe |
+| `internal/config` | config loading, defaults and validation, and `SimProcess` — the worker pipe |
 | `internal/genome` | weight vectors, bounds, mutation |
 | `internal/population` | agents, worker pool, ranking, generation building |
-| `internal/nudge` | adaptive mutation scaling functions |
+| `internal/nudge` | mutation schedules and step distributions |
 | `internal/simulation` | the outer loop and stopping conditions |
 
 ## Current state
 
-Working end to end, with tests across every package. Still to do: the
-stall-detection branch in `simulation.go` is partly commented out and needs
-deciding on, and tuning parameters are hardcoded at the call site rather than
-read from sel.
+Working end to end, with tests across every package. Everything tunable is read
+from the config, runs are reproducible from a seed, and the defaults were tuned
+across the sims in `testdata/sims`. Next up is a benchmark runner, then a JSON
+protocol for the engine's own output so a frontend can sit on top of it.
