@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Evolution_Engine/internal/config"
 	"Evolution_Engine/internal/simulation"
 	"fmt"
 )
@@ -9,7 +10,12 @@ import (
 // TODO change all errors and communication to be compatible with a frontend app, not just spitting information out into the terminal
 
 func main() {
-	sim, err := simulation.NewSimulation(0.99, 500, 100, "cmd/engine/main_test.json") // TODO add all of these to the config
+	cfg, err := config.Load("cmd/engine/main_test.json")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	sim, err := simulation.NewSimulation(cfg) // TODO add all of these to the config
 	if err != nil {
 		fmt.Println(err)
 		return

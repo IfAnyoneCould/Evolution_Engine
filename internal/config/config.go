@@ -221,7 +221,7 @@ func (p JsonParams) validate() error {
 		return errors.New("config error: sim_settings.timeout must be greater than 0")
 	}
 
-	if !slices.Contains([]string{"constant", "quadratic", "linear"}, p.NudgeFunc.Type) {
+	if !slices.Contains([]string{"constant", "quadratic", "linear"}, strings.ToLower(p.NudgeFunc.Type)) {
 		return errors.New("config error: nudge_func.type not recognized")
 	}
 
