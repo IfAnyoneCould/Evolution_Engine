@@ -97,8 +97,12 @@ type Program struct {
 }
 
 type NudgeFunc struct {
-	Type  string    `json:"type"`
-	Param []float64 `json:"params"`
+	Type     *string  `json:"type"`
+	Hold     *float64 `json:"hold"`
+	End      *float64 `json:"end"`
+	Exponent *float64 `json:"exponent"`
+	Rate     *float64 `json:"rate"`
+	Steps    *uint    `json:"steps"`
 }
 
 type RunSettings struct {
@@ -119,7 +123,7 @@ type StagnationDetect struct {
 
 type SimSettings struct {
 	Timeout  float64 `json:"timeout_ms"`
-	RandSeed *int64   `json:"rand_seed"`
+	RandSeed *int64  `json:"rand_seed"`
 	//TODO add robustness settings later, such as retry count, etc.
 }
 
@@ -147,10 +151,7 @@ func defaults() JsonParams {
 		Path: "",
 		Args: []string{},
 	}
-	nudgeFunc := NudgeFunc{
-		Type:  "quadratic",
-		Param: []float64{1.45},
-	}
+	nudgeFunc := NudgeFunc{}
 	runSettings := RunSettings{
 		TargetFitness:  0.99,
 		MaxCycles:      500,
@@ -194,9 +195,6 @@ func (p JsonParams) validate() error {
 	if len(p.Bounds) == 0 {
 		return errors.New("config error: bounds is required")
 	}
-	if len(p.NudgeFunc.Param) < 1 {
-		return errors.New("config error: nudge_func.params needs at least 1 value")
-	}
 	if p.Workers <= 0 {
 		return errors.New("config error: worker count needs to be above 0")
 	}
@@ -221,11 +219,49 @@ func (p JsonParams) validate() error {
 	if p.SimSettings.Timeout <= 0 {
 		return errors.New("config error: sim_settings.timeout must be greater than 0")
 	}
-
-	if !slices.Contains([]string{"constant", "quadratic", "linear"}, strings.ToLower(p.NudgeFunc.Type)) {
-		return errors.New("config error: nudge_func.type not recognized")
+	if float64(p.RunSettings.PopulationSize)*p.Selection.Pressure < 1 {
+		return errors.New("config error: run_settings.population_size * selection.pressure cannot be less than 1")
 	}
-
+	if p.NudgeFunc.Type != nil {
+		if !slices.Contains([]string{"constant", "quadratic", "linear", "power", "exponential", "cosine", "step"}, strings.ToLower(*p.NudgeFunc.Type)) {
+			return errors.New("config error: nudge_func.type not recognized")
+		}
+		switch strings.ToLower(*p.NudgeFunc.Type) {
+		case "exponential":
+			{
+				if p.NudgeFunc.Rate == nil {
+					return errors.New("config error: if nudge_func.type is 'exponential', then nudge_func.rate is required")
+				}
+				if *p.NudgeFunc.Rate <= 0 {
+					return errors.New("config error: nudge_func.rate must be greater than 0")
+				}
+			}
+		case "step":
+			{
+				if p.NudgeFunc.Steps == nil {
+					return errors.New("config error: if nudge_func.type is 'step', then nudge_func.steps is required")
+				}
+				if *p.NudgeFunc.Steps < 1 {
+					return errors.New("config error: nudge_func.steps must be greater than 0")
+				}
+			}
+		case "power":
+			{
+				if p.NudgeFunc.Exponent == nil {
+					return errors.New("config error: if nudge_func.type is 'power', then nudge_func.exponent is required")
+				}
+				if *p.NudgeFunc.Exponent <= 0 {
+					return errors.New("config error: nudge_func.exponent must be greater than 0")
+				}
+			}
+		}
+	}
+	if p.NudgeFunc.End != nil && (*p.NudgeFunc.End < 0 || *p.NudgeFunc.End > 1) {
+		return errors.New("config error: nudge_func.end must be in range [0,1]")
+	}
+	if p.NudgeFunc.Hold != nil && (*p.NudgeFunc.Hold < 0 || *p.NudgeFunc.Hold > 1) {
+		return errors.New("config error: nudge_func.hold must be in range [0,1]")
+	}
 	return nil
 }
 
@@ -240,6 +276,24 @@ func Load(path string) (JsonParams, error) {
 
 	if err = json.Unmarshal(file, &cfg); err != nil {
 		return JsonParams{}, err
+	}
+
+	if cfg.NudgeFunc.Type == nil {
+		t := "quadratic"
+		h := 0.45
+		e := 0.2
+		cfg.NudgeFunc.Type = &t
+		cfg.NudgeFunc.Hold = &h
+		cfg.NudgeFunc.End = &e
+	} else {
+		if cfg.NudgeFunc.Hold == nil {
+			h := float64(0)
+			cfg.NudgeFunc.Hold = &h
+		}
+		if cfg.NudgeFunc.End == nil {
+			e := float64(0)
+			cfg.NudgeFunc.End = &e
+		}
 	}
 
 	if err = cfg.validate(); err != nil {

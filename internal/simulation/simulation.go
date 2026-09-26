@@ -23,12 +23,13 @@ type Simulation struct {
 }
 
 func NewSimulation(cfg config.JsonParams) (*Simulation, error) {
-	pop, err := population.NewPopulation(cfg)
+	r := rand.New(rand.NewSource(*cfg.SimSettings.RandSeed))
+	pop, err := population.NewPopulation(cfg, r)
 	if err != nil {
 		return &Simulation{}, err
 	}
-	fmt.Printf("using random seed: %d\n", cfg.SimSettings.RandSeed)
-	return &Simulation{pop, cfg.RunSettings.MaxCycles, 0, cfg.RunSettings.TargetFitness, cfg.Selection, cfg.StagnationDetect, cfg.Output, rand.New(rand.NewSource(*cfg.SimSettings.RandSeed))}, nil
+	fmt.Printf("using random seed: %d\n", *cfg.SimSettings.RandSeed)
+	return &Simulation{pop, cfg.RunSettings.MaxCycles, 0, cfg.RunSettings.TargetFitness, cfg.Selection, cfg.StagnationDetect, cfg.Output, r}, nil
 }
 
 func (s *Simulation) Run() error {

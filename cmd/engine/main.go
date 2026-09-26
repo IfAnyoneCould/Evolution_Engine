@@ -36,5 +36,5 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Best weights: %v", sim.GetBestWeights()) // TODO save the best weights to an output file. At first should just overwrite current info, then add a history functionality including config settings, run time, cycles, etc
+	fmt.Printf("Best weights: %v", sim.GetBestWeights())
 }

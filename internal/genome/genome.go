@@ -72,9 +72,9 @@ func (g *Genome) GetWeights() []float64 {
 	return slice
 }
 
-func (g *Genome) Init() {
+func (g *Genome) Init(r *rand.Rand) {
 	for i, v := range g.Params {
-		val := v.Lower + rand.Float64()*(v.Upper-v.Lower)
+		val := v.Lower + r.Float64()*(v.Upper-v.Lower)
 		_ = g.SetWeight(i, val) // don't check error, weight it always between bounds
 	}
 }

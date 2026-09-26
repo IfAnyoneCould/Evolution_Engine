@@ -21,13 +21,13 @@ type Agent struct {
 	Evaluated bool
 }
 
-func NewAgent(bounds [][2]float64) (Agent, error) {
+func NewAgent(bounds [][2]float64, r *rand.Rand) (Agent, error) {
 	g := genome.NewGenome(len(bounds))
 	err := g.SetBounds(bounds...)
 	if err != nil {
 		return Agent{}, err
 	}
-	g.Init()
+	g.Init(r)
 	return Agent{g, math.Inf(-1), false}, nil
 }
 
@@ -46,17 +46,19 @@ type Population struct {
 	ProcList     []*config.SimProcess
 	WorkerCount  uint
 	TopFitness   float64
-	BaseFraction float64
+	MinNudge     float64
 	Fraction     float64
 	NudgeFunc    nudge.Function
+	hold         float64
+	end          float64
 	StartFitness float64
 }
 
-func NewPopulation(params config.JsonParams) (*Population, error) {
+func NewPopulation(params config.JsonParams, r *rand.Rand) (*Population, error) {
 
 	var agents []Agent
 	for range params.RunSettings.PopulationSize {
-		a, err := NewAgent(params.Bounds)
+		a, err := NewAgent(params.Bounds, r)
 		if err != nil {
 			return &Population{}, err
 		}
@@ -73,16 +75,27 @@ func NewPopulation(params config.JsonParams) (*Population, error) {
 	}
 
 	var nudgeFunc nudge.Function
-	switch strings.ToLower(params.NudgeFunc.Type) {
+
+	switch strings.ToLower(*params.NudgeFunc.Type) {
 	case "constant":
-		nudgeFunc = nudge.NewConstantFunction(params.NudgeFunc.Param[0])
+		nudgeFunc = nudge.NewConstantFunction()
 	case "linear":
-		nudgeFunc = nudge.NewLinearFunction(params.NudgeFunc.Param[0])
+		nudgeFunc = nudge.NewLinearFunction()
 	case "quadratic":
-		nudgeFunc = nudge.NewQuadraticFunction(params.NudgeFunc.Param[0])
+		nudgeFunc = nudge.NewQuadraticFunction()
+	case "power":
+		nudgeFunc = nudge.NewPowerFunction(*params.NudgeFunc.Exponent)
+	case "exponential":
+		nudgeFunc = nudge.NewExponentialFunction(*params.NudgeFunc.Rate)
+	case "cosine":
+		nudgeFunc = nudge.NewCosineFunction()
+	case "step":
+		nudgeFunc = nudge.NewStepFunction(*params.NudgeFunc.Steps)
+	default:
+		return &Population{}, errors.New("config error: nudge_func.type not recognized")
 	}
 
-	return &Population{agents, procList, params.Workers, -1, params.Fraction, params.MinNudge, nudgeFunc, 0}, nil
+	return &Population{agents, procList, params.Workers, -1, params.MinNudge, params.Fraction, nudgeFunc, *params.NudgeFunc.Hold, *params.NudgeFunc.End, 0}, nil
 }
 
 func (p *Population) CalcNudge(fit float64, goal float64) float64 {
@@ -90,8 +103,10 @@ func (p *Population) CalcNudge(fit float64, goal float64) float64 {
 	if goal-p.StartFitness == 0 {
 		progress = 1
 	}
-	raw := p.BaseFraction * nudge.Clamp(p.NudgeFunc.Get(progress), 0, 1)
-	return max(raw, p.Fraction)
+
+	u := nudge.Clamp((progress-p.hold)/(1-p.hold), 0, 1)
+	f := p.end + (1-p.end)*p.NudgeFunc.Get(u)
+	return max(f*p.Fraction, p.MinNudge)
 }
 
 func (p *Population) CloseSims() error {
@@ -180,7 +195,7 @@ func (p *Population) NewGen(sel config.Selection, goal float64, r *rand.Rand) er
 	}
 
 	for len(newAgents) < n {
-		parent := p.Agents[rand.Intn(cutoff)]
+		parent := p.Agents[r.Intn(cutoff)]
 
 		childGene := parent.Gene.Clone()
 		childGene.Nudge(p.CalcNudge(parent.Fitness, goal), r)
