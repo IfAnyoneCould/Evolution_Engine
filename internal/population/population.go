@@ -162,7 +162,7 @@ func (p *Population) Rank() {
 	p.TopFitness = p.Agents[0].Fitness
 }
 
-func (p *Population) NewGen(sel config.Selection, goal float64) error {
+func (p *Population) NewGen(sel config.Selection, goal float64, r *rand.Rand) error {
 	p.Rank()
 
 	n := len(p.Agents)
@@ -183,7 +183,7 @@ func (p *Population) NewGen(sel config.Selection, goal float64) error {
 		parent := p.Agents[rand.Intn(cutoff)]
 
 		childGene := parent.Gene.Clone()
-		childGene.Nudge(p.CalcNudge(parent.Fitness, goal))
+		childGene.Nudge(p.CalcNudge(parent.Fitness, goal), r)
 		newAgents = append(newAgents, Agent{Gene: childGene, Fitness: math.Inf(-1), Evaluated: false})
 	}
 	p.Agents = newAgents

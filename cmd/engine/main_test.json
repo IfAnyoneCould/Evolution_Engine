@@ -12,5 +12,8 @@
     [-5.12, 5.12],
     [-5.12, 5.12],
     [-5.12, 5.12]
-  ]
+  ],
+  "output": {
+    "weight_path": "cmd/engine/output_test.txt"
+  }
 }

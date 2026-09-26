@@ -118,7 +118,8 @@ type StagnationDetect struct {
 }
 
 type SimSettings struct {
-	Timeout float64 `json:"timeout_ms"`
+	Timeout  float64 `json:"timeout_ms"`
+	RandSeed *int64   `json:"rand_seed"`
 	//TODO add robustness settings later, such as retry count, etc.
 }
 
@@ -164,7 +165,7 @@ func defaults() JsonParams {
 		Epsilon:  0.01,
 	}
 	simSettings := SimSettings{
-		Timeout: 500,
+		Timeout: 5000,
 	}
 	output := Output{
 		WeightPath: "",
@@ -243,6 +244,11 @@ func Load(path string) (JsonParams, error) {
 
 	if err = cfg.validate(); err != nil {
 		return JsonParams{}, err
+	}
+
+	if cfg.SimSettings.RandSeed == nil {
+		s := time.Now().UnixMicro()
+		cfg.SimSettings.RandSeed = &s
 	}
 
 	return cfg, nil
