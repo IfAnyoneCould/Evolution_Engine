@@ -1,6 +1,7 @@
 # Compiled binaries
 *.exe
 !testdata/sims/go/bin/*.exe
+!cmd/engine/TestRun.exe
 *.exe~
 *.dll
 *.so

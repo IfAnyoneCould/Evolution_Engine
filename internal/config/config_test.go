@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 
 func startSim(t *testing.T, mode string) *SimProcess {
 	t.Helper()
-	sim, err := NewSimProcess(simBin, []string{mode})
+	sim, err := NewSimProcess(simBin, []string{mode}, 5000)
 	if err != nil {
 		t.Fatalf("could not start the test sim: %v", err)
 	}
@@ -61,12 +61,21 @@ func genomeWith(t *testing.T, weights ...float64) *genome.Genome {
 	return g
 }
 
-func TestParseInputFile(t *testing.T) {
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "cfg.json")
+	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+		t.Fatalf("could not write the test config: %v", err)
+	}
+	return path
+}
+
+func TestLoad(t *testing.T) {
 	tests := []struct {
 		Name         string
 		Path         string
 		WantBound    [][2]float64
-		WantProg     *ProgramBin
+		WantProg     Program
 		WantFraction float64
 		WantMinNudge float64
 		WantErr      bool
@@ -75,7 +84,7 @@ func TestParseInputFile(t *testing.T) {
 			"correct input file",
 			"config_test1.json",
 			genBoundsArray(-1, 1, -1, 1, -1, 1, 0, 0, 2, 2, -10, 100),
-			NewProgram("test_program.exe", []string{}),
+			Program{"test_program.exe", []string{}},
 			0.1,
 			0.0001,
 			false,
@@ -84,7 +93,7 @@ func TestParseInputFile(t *testing.T) {
 			"no bounds",
 			"config_test2.json",
 			nil,
-			nil,
+			Program{},
 			-1,
 			-1,
 			true,
@@ -93,7 +102,7 @@ func TestParseInputFile(t *testing.T) {
 			"no fraction",
 			"config_test3.json",
 			genBoundsArray(-1, 1, -1, 1, -1, 1, 0, 0, 2, 2, -10, 100),
-			NewProgram("test_program.exe", []string{}),
+			Program{"test_program.exe", []string{}},
 			0.05,
 			0.0001,
 			false,
@@ -102,7 +111,7 @@ func TestParseInputFile(t *testing.T) {
 			"program with Args",
 			"config_test4.json",
 			genBoundsArray(-1, 1, 0, 5),
-			NewProgram("test_program.exe", []string{"-v", "--seed", "42"}),
+			Program{"test_program.exe", []string{"-v", "--seed", "42"}},
 			0.1,
 			0.0001,
 			false,
@@ -111,7 +120,7 @@ func TestParseInputFile(t *testing.T) {
 			"nonexistent file",
 			"does_not_exist.json",
 			nil,
-			nil,
+			Program{},
 			-1,
 			-1,
 			true,
@@ -120,7 +129,7 @@ func TestParseInputFile(t *testing.T) {
 			"malformed json",
 			"config_test5.json",
 			nil,
-			nil,
+			Program{},
 			-1,
 			-1,
 			true,
@@ -129,7 +138,7 @@ func TestParseInputFile(t *testing.T) {
 			"empty bounds array",
 			"config_test6.json",
 			nil,
-			nil,
+			Program{},
 			-1,
 			-1,
 			true,
@@ -138,7 +147,7 @@ func TestParseInputFile(t *testing.T) {
 			"min nudge set",
 			"config_test8.json",
 			genBoundsArray(-1, 1, -1, 1),
-			NewProgram("test_program.exe", []string{}),
+			Program{"test_program.exe", []string{}},
 			0.2,
 			0.01,
 			false,
@@ -147,7 +156,7 @@ func TestParseInputFile(t *testing.T) {
 			"explicit zeros are kept, not replaced by defaults",
 			"config_test14.json",
 			genBoundsArray(-1, 1),
-			NewProgram("test_program.exe", []string{}),
+			Program{"test_program.exe", []string{}},
 			0,
 			0,
 			false,
@@ -156,7 +165,7 @@ func TestParseInputFile(t *testing.T) {
 			"no program path",
 			"config_test15.json",
 			nil,
-			nil,
+			Program{},
 			-1,
 			-1,
 			true,
@@ -164,71 +173,167 @@ func TestParseInputFile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			p := ParseInputFile(tt.Path)
+			cfg, err := Load(tt.Path)
 			if tt.WantErr {
-				if p.Err == nil {
+				if err == nil {
 					t.Errorf("expected error")
 				}
 				return
 			}
-			if p.Err != nil {
-				t.Fatalf("unexpected error: %v", p.Err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-			if !slices.Equal(p.Bounds, tt.WantBound) {
+			if !slices.Equal(cfg.Bounds, tt.WantBound) {
 				t.Errorf("incorrect bounds")
 			}
-			if !slices.Equal(p.Prog.Args, tt.WantProg.Args) {
+			if !slices.Equal(cfg.Prog.Args, tt.WantProg.Args) {
 				t.Errorf("program incorrect Args")
 			}
-			if p.Prog.Path != tt.WantProg.Path {
-				t.Errorf("program incorrect Path: expected %s, got %s", tt.WantProg.Path, p.Prog.Path)
+			if cfg.Prog.Path != tt.WantProg.Path {
+				t.Errorf("program incorrect Path: expected %s, got %s", tt.WantProg.Path, cfg.Prog.Path)
 			}
-			if p.Fraction != tt.WantFraction {
-				t.Errorf("incorrect fraction: wanted %f, got %f", tt.WantFraction, p.Fraction)
+			if cfg.Fraction != tt.WantFraction {
+				t.Errorf("incorrect fraction: wanted %f, got %f", tt.WantFraction, cfg.Fraction)
 			}
-			if p.MinNudge != tt.WantMinNudge {
-				t.Errorf("incorrect min nudge: wanted %f, got %f", tt.WantMinNudge, p.MinNudge)
-			}
-			if p.NudgeFunc == nil {
-				t.Errorf("no nudge function returned")
+			if cfg.MinNudge != tt.WantMinNudge {
+				t.Errorf("incorrect min nudge: wanted %f, got %f", tt.WantMinNudge, cfg.MinNudge)
 			}
 		})
 	}
 }
 
-func TestParseNudgeFunc(t *testing.T) {
+func TestLoadNudgeFunc(t *testing.T) {
 	tests := []struct {
-		Name     string
-		Path     string
-		Progress float64
-		WantVal  float64
-		WantErr  bool
+		Name      string
+		Path      string
+		WantType  string
+		WantParam []float64
+		WantErr   bool
 	}{
-		{"no nudge func defaults to constant 1", "config_test1.json", 0.5, 1, false},
-		{"constant", "config_test8.json", 0.9, 0.5, false},
-		{"linear, type is case insensitive", "config_test9.json", 0.25, 0.75, false},
-		{"quadratic ignores extra params", "config_test10.json", 1, 1, false},
-		{"unknown type", "config_test11.json", 0, 0, true},
-		{"no params", "config_test12.json", 0, 0, true},
-		{"no type defaults to constant", "config_test13.json", 0.5, 1, false},
+		{"no nudge func defaults to constant 1", "config_test1.json", "constant", []float64{1}, false},
+		{"constant", "config_test8.json", "constant", []float64{0.5}, false},
+		{"type is case insensitive", "config_test9.json", "linear", []float64{1}, false},
+		{"extra params are kept", "config_test10.json", "quadratic", []float64{2, 9}, false},
+		{"unknown type", "config_test11.json", "", nil, true},
+		{"no params", "config_test12.json", "", nil, true},
+		{"no type defaults to constant", "config_test13.json", "constant", []float64{1}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			p := ParseInputFile(tt.Path)
+			cfg, err := Load(tt.Path)
 			if tt.WantErr {
-				if p.Err == nil {
+				if err == nil {
 					t.Errorf("expected error")
 				}
 				return
 			}
-			if p.Err != nil {
-				t.Fatalf("unexpected error: %v", p.Err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-			got := p.NudgeFunc.Get(tt.Progress)
-			if math.Abs(got-tt.WantVal) > 1e-9 {
-				t.Errorf("incorrect value at progress %f: wanted %f, got %f", tt.Progress, tt.WantVal, got)
+			if !strings.EqualFold(cfg.NudgeFunc.Type, tt.WantType) {
+				t.Errorf("incorrect type: wanted %s, got %s", tt.WantType, cfg.NudgeFunc.Type)
+			}
+			if !slices.Equal(cfg.NudgeFunc.Param, tt.WantParam) {
+				t.Errorf("incorrect params: wanted %v, got %v", tt.WantParam, cfg.NudgeFunc.Param)
 			}
 		})
+	}
+}
+
+func TestLoadValidation(t *testing.T) {
+	base := `{"program":{"path":"test_program.exe"},"bounds":[[-1,1]]`
+	tests := []struct {
+		Name    string
+		Extra   string
+		WantErr bool
+	}{
+		{"defaults are valid", ``, false},
+		{"no workers", `,"workers":0`, true},
+		{"negative workers", `,"workers":-1`, true},
+		{"no population", `,"run_settings":{"population_size":0}`, true},
+		{"elite equal to population", `,"run_settings":{"population_size":5},"selection":{"elite":5}`, true},
+		{"elite under population", `,"run_settings":{"population_size":5},"selection":{"elite":4}`, false},
+		{"no pressure", `,"selection":{"pressure":0}`, true},
+		{"everything survives", `,"selection":{"pressure":1}`, false},
+		{"pressure above 1", `,"selection":{"pressure":1.5}`, true},
+		{"target of 0", `,"run_settings":{"target_fitness":0}`, true},
+		{"target of 1", `,"run_settings":{"target_fitness":1}`, false},
+		{"target above 1", `,"run_settings":{"target_fitness":1.5}`, true},
+		{"no patience", `,"stagnation_detection":{"patience":0}`, true},
+		{"no epsilon", `,"stagnation_detection":{"epsilon":0}`, true},
+		{"negative epsilon", `,"stagnation_detection":{"epsilon":-0.1}`, true},
+		{"no timeout", `,"sim_settings":{"timeout_ms":0}`, true},
+		{"nudge type in caps", `,"nudge_func":{"type":"QUADRATIC","params":[2]}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.Name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, base+tt.Extra+`}`))
+			if tt.WantErr && err == nil {
+				t.Errorf("expected error")
+			}
+			if !tt.WantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadPartialSection(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `{"program":{"path":"test_program.exe"},"bounds":[[-1,1]],"run_settings":{"max_cycles":10}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.RunSettings.MaxCycles != 10 {
+		t.Errorf("incorrect max cycles: wanted %d, got %d", 10, cfg.RunSettings.MaxCycles)
+	}
+	if cfg.RunSettings.PopulationSize != 100 {
+		t.Errorf("setting one field wiped the default population size: got %d", cfg.RunSettings.PopulationSize)
+	}
+	if cfg.RunSettings.TargetFitness != 0.99 {
+		t.Errorf("setting one field wiped the default target: got %f", cfg.RunSettings.TargetFitness)
+	}
+}
+
+func TestLoadAllSettings(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `{
+		"program":{"path":"test_program.exe"},
+		"bounds":[[-1,1]],
+		"workers":3,
+		"run_settings":{"target_fitness":0.5,"max_cycles":7,"population_size":30},
+		"selection":{"pressure":0.3,"elite":4},
+		"stagnation_detection":{"patience":12,"epsilon":0.002},
+		"sim_settings":{"timeout_ms":250},
+		"output":{"weight_path":"out.json"}
+	}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := struct {
+		Workers    uint
+		Run        RunSettings
+		Selection  Selection
+		Stagnation StagnationDetect
+		Timeout    float64
+		WeightPath string
+	}{3, RunSettings{0.5, 7, 30}, Selection{0.3, 4}, StagnationDetect{12, 0.002}, 250, "out.json"}
+
+	if cfg.Workers != want.Workers {
+		t.Errorf("incorrect workers: wanted %d, got %d", want.Workers, cfg.Workers)
+	}
+	if cfg.RunSettings != want.Run {
+		t.Errorf("incorrect run settings: wanted %+v, got %+v", want.Run, cfg.RunSettings)
+	}
+	if cfg.Selection != want.Selection {
+		t.Errorf("incorrect selection: wanted %+v, got %+v", want.Selection, cfg.Selection)
+	}
+	if cfg.StagnationDetect != want.Stagnation {
+		t.Errorf("incorrect stagnation detection: wanted %+v, got %+v", want.Stagnation, cfg.StagnationDetect)
+	}
+	if cfg.SimSettings.Timeout != want.Timeout {
+		t.Errorf("incorrect timeout: wanted %f, got %f", want.Timeout, cfg.SimSettings.Timeout)
+	}
+	if cfg.Output.WeightPath != want.WeightPath {
+		t.Errorf("incorrect weight path: wanted %s, got %s", want.WeightPath, cfg.Output.WeightPath)
 	}
 }
 
@@ -288,7 +393,7 @@ func TestSimProcessSendsEveryWeight(t *testing.T) {
 }
 
 func TestNewSimProcessBadPath(t *testing.T) {
-	if _, err := NewSimProcess(filepath.Join(t.TempDir(), "not_a_program.exe"), []string{}); err == nil {
+	if _, err := NewSimProcess(filepath.Join(t.TempDir(), "not_a_program.exe"), []string{}, 5000); err == nil {
 		t.Errorf("expected error")
 	}
 }
@@ -308,6 +413,34 @@ func TestSimProcessEvalErrors(t *testing.T) {
 
 			if _, err := sim.Eval(genomeWith(t, 1, 2)); err == nil {
 				t.Errorf("expected error")
+			}
+		})
+	}
+}
+
+func TestSimProcessTimeout(t *testing.T) {
+	tests := []struct {
+		Name    string
+		Timeout float64
+		WantErr bool
+	}{
+		{"sim answers inside the timeout", 5000, false},
+		{"sim is slower than the timeout", 50, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.Name, func(t *testing.T) {
+			sim, err := NewSimProcess(simBin, []string{"slow"}, tt.Timeout)
+			if err != nil {
+				t.Fatalf("could not start the test sim: %v", err)
+			}
+			defer sim.Close()
+
+			_, err = sim.Eval(genomeWith(t, 1, 2))
+			if tt.WantErr && err == nil {
+				t.Errorf("expected a timeout error")
+			}
+			if !tt.WantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
 			}
 		})
 	}

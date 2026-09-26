@@ -1,6 +1,7 @@
 package population
 
 import (
+	"Evolution_Engine/internal/config"
 	"Evolution_Engine/internal/nudge"
 	"context"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -30,23 +30,28 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func simConfig(t *testing.T, mode string, dims int, extra string) string {
-	t.Helper()
-	bounds := make([]string, 0, dims)
-	for range dims {
-		bounds = append(bounds, "[-5,5]")
+func testConfig(mode string, dims int, agents int, workers int) config.JsonParams {
+	bounds := make([][2]float64, dims)
+	for i := range bounds {
+		bounds[i] = [2]float64{-5, 5}
 	}
-	body := fmt.Sprintf(`{"program":{"path":%q,"args":[%q]},"bounds":[%s]%s}`, simBin, mode, strings.Join(bounds, ","), extra)
-	path := filepath.Join(t.TempDir(), "sim.json")
-	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
-		t.Fatalf("could not write the test config: %v", err)
+	return config.JsonParams{
+		Prog:             config.Program{Path: simBin, Args: []string{mode}},
+		Bounds:           bounds,
+		Fraction:         0.05,
+		MinNudge:         0.0001,
+		NudgeFunc:        config.NudgeFunc{Type: "constant", Param: []float64{1}},
+		RunSettings:      config.RunSettings{TargetFitness: 1000, MaxCycles: 10, PopulationSize: uint(agents)},
+		Workers:          uint(workers),
+		Selection:        config.Selection{Pressure: 0.45, Elite: 1},
+		StagnationDetect: config.StagnationDetect{Patience: 1000, Epsilon: 0.01},
+		SimSettings:      config.SimSettings{Timeout: 5000},
 	}
-	return path
 }
 
 func newTestPop(t *testing.T, mode string, agents int, workers int) *Population {
 	t.Helper()
-	p, err := NewPopulation(agents, simConfig(t, mode, 3, ""), workers)
+	p, err := NewPopulation(testConfig(mode, 3, agents, workers))
 	if err != nil {
 		t.Fatalf("could not build the population: %v", err)
 	}
@@ -112,14 +117,14 @@ func TestNewPopulation(t *testing.T) {
 	if len(p.ProcList) != 4 {
 		t.Errorf("incorrect worker count: expected %d, got %d", 4, len(p.ProcList))
 	}
-	if p.WorkerCount != len(p.ProcList) {
+	if p.WorkerCount != uint(len(p.ProcList)) {
 		t.Errorf("WorkerCount %d does not match the %d processes started", p.WorkerCount, len(p.ProcList))
 	}
 	if p.BaseFraction != 0.05 {
-		t.Errorf("incorrect default nudge: expected %f, got %f", 0.05, p.BaseFraction)
+		t.Errorf("incorrect fraction: expected %f, got %f", 0.05, p.BaseFraction)
 	}
 	if p.Fraction != 0.0001 {
-		t.Errorf("incorrect default min nudge: expected %f, got %f", 0.0001, p.Fraction)
+		t.Errorf("incorrect min nudge: expected %f, got %f", 0.0001, p.Fraction)
 	}
 	if p.NudgeFunc == nil {
 		t.Errorf("no nudge function set")
@@ -131,27 +136,51 @@ func TestNewPopulation(t *testing.T) {
 	}
 }
 
-func TestNewPopulationConfigValues(t *testing.T) {
-	path := simConfig(t, "sum", 2, `,"fraction":0.3,"min_nudge":0.02,"nudge_func":{"type":"linear","params":[1.0]}`)
-	p, err := NewPopulation(4, path, 2)
-	if err != nil {
-		t.Fatalf("could not build the population: %v", err)
+func TestNewPopulationNudgeFunc(t *testing.T) {
+	tests := []struct {
+		name     string
+		function config.NudgeFunc
+		progress float64
+		want     float64
+	}{
+		{"constant", config.NudgeFunc{Type: "constant", Param: []float64{0.5}}, 0.9, 0.5},
+		{"linear", config.NudgeFunc{Type: "linear", Param: []float64{1}}, 0.25, 0.75},
+		{"quadratic", config.NudgeFunc{Type: "quadratic", Param: []float64{1}}, 0.5, 0.25},
+		{"type is case insensitive", config.NudgeFunc{Type: "LINEAR", Param: []float64{1}}, 0.25, 0.75},
+		{"extra params are ignored", config.NudgeFunc{Type: "quadratic", Param: []float64{2, 9}}, 1, 1},
 	}
-	defer p.CloseSims()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig("sum", 2, 4, 1)
+			cfg.Fraction = 0.3
+			cfg.MinNudge = 0.02
+			cfg.NudgeFunc = tt.function
+			p, err := NewPopulation(cfg)
+			if err != nil {
+				t.Fatalf("could not build the population: %v", err)
+			}
+			defer p.CloseSims()
 
-	if p.BaseFraction != 0.3 {
-		t.Errorf("incorrect nudge: expected %f, got %f", 0.3, p.BaseFraction)
-	}
-	if p.Fraction != 0.02 {
-		t.Errorf("incorrect min nudge: expected %f, got %f", 0.02, p.Fraction)
-	}
-	if got := p.NudgeFunc.Get(0.25); math.Abs(got-0.75) > 1e-9 {
-		t.Errorf("wrong nudge function: expected %f, got %f", 0.75, got)
+			if p.BaseFraction != 0.3 {
+				t.Errorf("incorrect fraction: expected %f, got %f", 0.3, p.BaseFraction)
+			}
+			if p.Fraction != 0.02 {
+				t.Errorf("incorrect min nudge: expected %f, got %f", 0.02, p.Fraction)
+			}
+			if p.NudgeFunc == nil {
+				t.Fatalf("no nudge function set")
+			}
+			if got := p.NudgeFunc.Get(tt.progress); math.Abs(got-tt.want) > 1e-9 {
+				t.Errorf("wrong nudge function: expected %f, got %f", tt.want, got)
+			}
+		})
 	}
 }
 
-func TestNewPopulationBadConfig(t *testing.T) {
-	if _, err := NewPopulation(5, filepath.Join(t.TempDir(), "missing.json"), 2); err == nil {
+func TestNewPopulationBadProgram(t *testing.T) {
+	cfg := testConfig("sum", 3, 5, 2)
+	cfg.Prog.Path = filepath.Join(t.TempDir(), "not_a_program.exe")
+	if _, err := NewPopulation(cfg); err == nil {
 		t.Errorf("expected error")
 	}
 }
@@ -273,20 +302,18 @@ func TestRunBatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := newTestPop(t, "sum", tt.agents, tt.workers)
 
-			want := make([]float64, len(p.Agents))
-			for i := range p.Agents {
-				want[i] = sum(p.Agents[i].Gene.GetWeights())
-			}
-
 			if err := p.RunBatch(context.Background()); err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(p.Agents) != tt.agents {
+				t.Errorf("batch changed the agent count: expected %d, got %d", tt.agents, len(p.Agents))
 			}
 			for i, a := range p.Agents {
 				if !a.Evaluated {
 					t.Errorf("agent %d never got evaluated", i)
 				}
-				if math.Abs(a.Fitness-want[i]) > 1e-9 {
-					t.Errorf("agent %d got the wrong fitness: expected %f, got %f", i, want[i], a.Fitness)
+				if want := sum(a.Gene.GetWeights()); math.Abs(a.Fitness-want) > 1e-9 {
+					t.Errorf("agent %d got the wrong fitness: expected %f, got %f", i, want, a.Fitness)
 				}
 			}
 		})
@@ -299,14 +326,10 @@ func TestRunBatchAfterNewGen(t *testing.T) {
 	if err := p.RunBatch(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := p.NewGen(&NewGenConfig{Elite: 1, Pressure: 0.5}, 1000); err != nil {
+	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.5}, 1000); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	want := make([]float64, len(p.Agents))
-	for i := range p.Agents {
-		want[i] = sum(p.Agents[i].Gene.GetWeights())
-	}
 	if err := p.RunBatch(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -314,8 +337,8 @@ func TestRunBatchAfterNewGen(t *testing.T) {
 		if !a.Evaluated {
 			t.Errorf("agent %d never got evaluated", i)
 		}
-		if math.Abs(a.Fitness-want[i]) > 1e-9 {
-			t.Errorf("agent %d got the wrong fitness: expected %f, got %f", i, want[i], a.Fitness)
+		if want := sum(a.Gene.GetWeights()); math.Abs(a.Fitness-want) > 1e-9 {
+			t.Errorf("agent %d got the wrong fitness: expected %f, got %f", i, want, a.Fitness)
 		}
 	}
 }
@@ -328,19 +351,34 @@ func TestRunBatchError(t *testing.T) {
 	}
 }
 
+func TestRunBatchSetsTopFitness(t *testing.T) {
+	p := newTestPop(t, "sum", 10, 2)
+
+	if err := p.RunBatch(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	best := math.Inf(-1)
+	for _, a := range p.Agents {
+		best = max(best, a.Fitness)
+	}
+	if p.TopFitness != best {
+		t.Errorf("TopFitness not updated by the batch: expected %f, got %f", best, p.TopFitness)
+	}
+}
+
 func TestNewGen(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  NewGenConfig
+		config  config.Selection
 		agents  int
 		wantErr bool
 	}{
-		{"standard", NewGenConfig{Elite: 1, Pressure: 0.45}, 20, false},
-		{"no elites", NewGenConfig{Elite: 0, Pressure: 0.5}, 20, false},
-		{"everything survives", NewGenConfig{Elite: 2, Pressure: 1}, 20, false},
-		{"more elites than agents", NewGenConfig{Elite: 50, Pressure: 0.5}, 20, false},
-		{"pressure too low", NewGenConfig{Elite: 1, Pressure: 0.01}, 20, true},
-		{"no pressure", NewGenConfig{Elite: 1, Pressure: 0}, 20, true},
+		{"standard", config.Selection{Elite: 1, Pressure: 0.45}, 20, false},
+		{"no elites", config.Selection{Elite: 0, Pressure: 0.5}, 20, false},
+		{"everything survives", config.Selection{Elite: 2, Pressure: 1}, 20, false},
+		{"more elites than agents", config.Selection{Elite: 50, Pressure: 0.5}, 20, false},
+		{"pressure too low", config.Selection{Elite: 1, Pressure: 0.01}, 20, true},
+		{"no pressure", config.Selection{Elite: 1, Pressure: 0}, 20, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -353,7 +391,7 @@ func TestNewGen(t *testing.T) {
 			best := p.Agents[0].Gene.GetWeights()
 			bestFitness := p.Agents[0].Fitness
 
-			err := p.NewGen(&tt.config, 1000)
+			err := p.NewGen(tt.config, 1000)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error")
@@ -379,7 +417,7 @@ func TestNewGen(t *testing.T) {
 					t.Errorf("the elite agent should still count as evaluated")
 				}
 			}
-			elites := min(tt.config.Elite, tt.agents)
+			elites := min(int(tt.config.Elite), tt.agents)
 			for i := elites; i < len(p.Agents); i++ {
 				if p.Agents[i].Evaluated {
 					t.Errorf("child %d is marked evaluated before being run", i)
@@ -397,7 +435,7 @@ func TestNewGen(t *testing.T) {
 func TestNewGenUnevaluatedElite(t *testing.T) {
 	p := newTestPop(t, "sum", 20, 2)
 
-	if err := p.NewGen(&NewGenConfig{Elite: 2, Pressure: 0.5}, 1000); err != nil {
+	if err := p.NewGen(config.Selection{Elite: 2, Pressure: 0.5}, 1000); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(p.Agents) != 20 {
@@ -419,7 +457,7 @@ func TestNewGenChildrenAreOwnGenomes(t *testing.T) {
 	if err := p.RunBatch(context.Background()); err != nil {
 		t.Fatalf("could not run the first batch: %v", err)
 	}
-	if err := p.NewGen(&NewGenConfig{Elite: 1, Pressure: 0.5}, 1000); err != nil {
+	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.5}, 1000); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -452,7 +490,7 @@ func TestNewGenPullsFromTheTop(t *testing.T) {
 	p.Rank()
 	worst := p.Agents[len(p.Agents)-1].Gene.GetWeights()
 
-	if err := p.NewGen(&NewGenConfig{Elite: 1, Pressure: 0.25}, 1000); err != nil {
+	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.25}, 1000); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for i, a := range p.Agents {
@@ -463,7 +501,7 @@ func TestNewGenPullsFromTheTop(t *testing.T) {
 }
 
 func TestCloseSims(t *testing.T) {
-	p, err := NewPopulation(4, simConfig(t, "sum", 3, ""), 2)
+	p, err := NewPopulation(testConfig("sum", 3, 4, 2))
 	if err != nil {
 		t.Fatalf("could not build the population: %v", err)
 	}

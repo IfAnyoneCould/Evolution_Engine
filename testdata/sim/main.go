@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -38,6 +39,9 @@ func main() {
 			fmt.Println(negSquares(weights))
 		case "len":
 			fmt.Println(float64(len(weights)))
+		case "slow":
+			time.Sleep(300 * time.Millisecond)
+			fmt.Println(sum(weights))
 		case "count":
 			fmt.Println(float64(count))
 		case "garbage":

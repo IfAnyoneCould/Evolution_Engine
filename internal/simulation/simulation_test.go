@@ -1,11 +1,11 @@
 package simulation
 
 import (
+	"Evolution_Engine/internal/config"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -27,23 +27,28 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func simConfig(t *testing.T, mode string, dims int) string {
-	t.Helper()
-	bounds := make([]string, 0, dims)
-	for range dims {
-		bounds = append(bounds, "[-5,5]")
+func testConfig(mode string, target float64, cycles int, agents int) config.JsonParams {
+	bounds := make([][2]float64, 3)
+	for i := range bounds {
+		bounds[i] = [2]float64{-5, 5}
 	}
-	body := fmt.Sprintf(`{"program":{"path":%q,"args":[%q]},"bounds":[%s]}`, simBin, mode, strings.Join(bounds, ","))
-	path := filepath.Join(t.TempDir(), "sim.json")
-	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
-		t.Fatalf("could not write the test config: %v", err)
+	return config.JsonParams{
+		Prog:             config.Program{Path: simBin, Args: []string{mode}},
+		Bounds:           bounds,
+		Fraction:         0.05,
+		MinNudge:         0.0001,
+		NudgeFunc:        config.NudgeFunc{Type: "constant", Param: []float64{1}},
+		RunSettings:      config.RunSettings{TargetFitness: target, MaxCycles: uint(cycles), PopulationSize: uint(agents)},
+		Workers:          4,
+		Selection:        config.Selection{Pressure: 0.45, Elite: 2},
+		StagnationDetect: config.StagnationDetect{Patience: 1000, Epsilon: 0.01},
+		SimSettings:      config.SimSettings{Timeout: 5000},
 	}
-	return path
 }
 
-func newTestSim(t *testing.T, mode string, target float64, cycles int, agents int) *Simulation {
+func newTestSim(t *testing.T, cfg config.JsonParams) *Simulation {
 	t.Helper()
-	s, err := NewSimulation(target, cycles, agents, simConfig(t, mode, 3))
+	s, err := NewSimulation(cfg)
 	if err != nil {
 		t.Fatalf("could not build the simulation: %v", err)
 	}
@@ -66,7 +71,8 @@ func runQuiet(t *testing.T, s *Simulation) {
 }
 
 func TestNewSimulation(t *testing.T) {
-	s := newTestSim(t, "sum", 10, 25, 20)
+	cfg := testConfig("sum", 10, 25, 20)
+	s := newTestSim(t, cfg)
 	defer s.Pop.CloseSims()
 
 	if len(s.Pop.Agents) != 20 {
@@ -81,16 +87,24 @@ func TestNewSimulation(t *testing.T) {
 	if s.targetFitness != 10 {
 		t.Errorf("incorrect target fitness: expected %f, got %f", 10.0, s.targetFitness)
 	}
+	if s.newGenConfig != cfg.Selection {
+		t.Errorf("incorrect selection: expected %+v, got %+v", cfg.Selection, s.newGenConfig)
+	}
+	if s.stagnation != cfg.StagnationDetect {
+		t.Errorf("incorrect stagnation detection: expected %+v, got %+v", cfg.StagnationDetect, s.stagnation)
+	}
 }
 
-func TestNewSimulationBadConfig(t *testing.T) {
-	if _, err := NewSimulation(1, 10, 10, filepath.Join(t.TempDir(), "missing.json")); err == nil {
+func TestNewSimulationBadProgram(t *testing.T) {
+	cfg := testConfig("sum", 1, 10, 10)
+	cfg.Prog.Path = filepath.Join(t.TempDir(), "not_a_program.exe")
+	if _, err := NewSimulation(cfg); err == nil {
 		t.Errorf("expected error")
 	}
 }
 
 func TestRunStopsAtTarget(t *testing.T) {
-	s := newTestSim(t, "sum", 5, 200, 20)
+	s := newTestSim(t, testConfig("sum", 5, 200, 20))
 	runQuiet(t, s)
 
 	if s.Pop.TopFitness < 5 {
@@ -102,7 +116,7 @@ func TestRunStopsAtTarget(t *testing.T) {
 }
 
 func TestRunStopsAtCycleMax(t *testing.T) {
-	s := newTestSim(t, "sum", 1000, 5, 20)
+	s := newTestSim(t, testConfig("sum", 1000, 5, 20))
 	runQuiet(t, s)
 
 	if s.currentCycle != 5 {
@@ -114,7 +128,7 @@ func TestRunStopsAtCycleMax(t *testing.T) {
 }
 
 func TestRunImproves(t *testing.T) {
-	s := newTestSim(t, "sum", 1000, 60, 20)
+	s := newTestSim(t, testConfig("sum", 1000, 60, 20))
 	runQuiet(t, s)
 
 	if s.Pop.TopFitness < 13 {
@@ -123,7 +137,7 @@ func TestRunImproves(t *testing.T) {
 }
 
 func TestRunWithFailingSim(t *testing.T) {
-	s := newTestSim(t, "garbage", 5, 50, 20)
+	s := newTestSim(t, testConfig("garbage", 5, 50, 20))
 	runQuiet(t, s)
 
 	if s.currentCycle != 0 {
@@ -132,7 +146,7 @@ func TestRunWithFailingSim(t *testing.T) {
 }
 
 func TestGetBest(t *testing.T) {
-	s := newTestSim(t, "sum", 5, 200, 20)
+	s := newTestSim(t, testConfig("sum", 5, 200, 20))
 	runQuiet(t, s)
 
 	best := s.GetBestAgent()
@@ -154,5 +168,37 @@ func TestGetBest(t *testing.T) {
 		if w != weights[i] {
 			t.Errorf("best agent and best weights disagree at param %d: %f and %f", i, w, weights[i])
 		}
+	}
+}
+
+func TestRunStopsOnStall(t *testing.T) {
+	cfg := testConfig("len", 1000, 200, 20)
+	cfg.StagnationDetect.Patience = 5
+	s := newTestSim(t, cfg)
+	runQuiet(t, s)
+
+	if s.currentCycle < 5 || s.currentCycle > 6 {
+		t.Errorf("a flat run should stop after about %d cycles, got %d", 5, s.currentCycle)
+	}
+}
+
+func TestRunKeepsGoingWhileImproving(t *testing.T) {
+	cfg := testConfig("count", 1e9, 20, 20)
+	cfg.StagnationDetect.Patience = 2
+	s := newTestSim(t, cfg)
+	runQuiet(t, s)
+
+	if s.currentCycle != 20 {
+		t.Errorf("run stopped as stalled while fitness was still climbing: got cycle %d", s.currentCycle)
+	}
+}
+
+func TestRunSetsStartFitness(t *testing.T) {
+	cfg := testConfig("len", 1000, 3, 10)
+	s := newTestSim(t, cfg)
+	runQuiet(t, s)
+
+	if s.Pop.StartFitness != 3 {
+		t.Errorf("incorrect start fitness: expected the first generation's best of %f, got %f", 3.0, s.Pop.StartFitness)
 	}
 }
