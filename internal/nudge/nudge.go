@@ -3,10 +3,43 @@ package nudge
 import (
 	"cmp"
 	"math"
+	"math/rand"
 )
 
 func Clamp[T cmp.Ordered](val, lo, hi T) T {
 	return min(max(lo, val), hi)
+}
+
+type Distribution interface {
+	Mutate(w, lo, hi, size float64, r *rand.Rand) float64
+}
+
+type Uniform struct{}
+
+func NewUniformDistribution() *Uniform {
+	return &Uniform{}
+}
+func (u *Uniform) Mutate(w, lo, hi, size float64, r *rand.Rand) float64 {
+	x := w + (2*r.Float64()-1)*size*(hi-lo)
+	return Clamp(x, lo, hi)
+}
+
+type Gaussian struct{}
+
+func NewGaussianDistribution() *Gaussian {
+	return &Gaussian{}
+}
+func (g *Gaussian) Mutate(w, lo, hi, size float64, r *rand.Rand) float64 {
+	x := w + r.NormFloat64()*size*(hi-lo)
+	for x < lo || x > hi {
+		if x > hi {
+			x = 2*hi - x
+		}
+		if x < lo {
+			x = 2*lo - x
+		}
+	}
+	return x
 }
 
 type Function interface {

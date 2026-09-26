@@ -3,6 +3,7 @@ package config
 import (
 	"Evolution_Engine/internal/genome"
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -96,7 +97,7 @@ type Program struct {
 	Args []string `json:"args"`
 }
 
-type NudgeFunc struct {
+type Schedule struct {
 	Type     *string  `json:"type"`
 	Hold     *float64 `json:"hold"`
 	End      *float64 `json:"end"`
@@ -131,13 +132,17 @@ type Output struct {
 	WeightPath string `json:"weight_path"`
 	//TODO add history control and pathing
 }
+type Mutation struct {
+	Distribution string   `json:"distribution"`
+	Fraction     float64  `json:"fraction"`
+	MinNudge     float64  `json:"min_nudge"`
+	Schedule     Schedule `json:"schedule"`
+}
 
 type JsonParams struct {
 	Prog             Program          `json:"program"`
 	Bounds           [][2]float64     `json:"bounds"`
-	Fraction         float64          `json:"fraction"`
-	MinNudge         float64          `json:"min_nudge"`
-	NudgeFunc        NudgeFunc        `json:"nudge_func"`
+	Mutation         Mutation         `json:"mutation"`
 	RunSettings      RunSettings      `json:"run_settings"`
 	Workers          uint             `json:"workers"`
 	Selection        Selection        `json:"selection"`
@@ -151,7 +156,13 @@ func defaults() JsonParams {
 		Path: "",
 		Args: []string{},
 	}
-	nudgeFunc := NudgeFunc{}
+	schedule := Schedule{}
+	mutation := Mutation{
+		Distribution: "uniform",
+		Fraction:     0.05,
+		MinNudge:     0.0005,
+		Schedule:     schedule,
+	}
 	runSettings := RunSettings{
 		TargetFitness:  0.99,
 		MaxCycles:      500,
@@ -175,9 +186,7 @@ func defaults() JsonParams {
 	return JsonParams{
 		Prog:             prog,
 		Bounds:           nil,
-		Fraction:         0.05,
-		MinNudge:         0.0005,
-		NudgeFunc:        nudgeFunc,
+		Mutation:         mutation,
 		RunSettings:      runSettings,
 		Workers:          10,
 		Selection:        selection,
@@ -222,45 +231,63 @@ func (p JsonParams) validate() error {
 	if float64(p.RunSettings.PopulationSize)*p.Selection.Pressure < 1 {
 		return errors.New("config error: run_settings.population_size * selection.pressure cannot be less than 1")
 	}
-	if p.NudgeFunc.Type != nil {
-		if !slices.Contains([]string{"constant", "quadratic", "linear", "power", "exponential", "cosine", "step"}, strings.ToLower(*p.NudgeFunc.Type)) {
-			return errors.New("config error: nudge_func.type not recognized")
+	if p.Mutation.Schedule.Type != nil {
+		if !slices.Contains([]string{"constant", "quadratic", "linear", "power", "exponential", "cosine", "step"}, strings.ToLower(*p.Mutation.Schedule.Type)) {
+			return errors.New("config error: mutation.schedule.type not recognized")
 		}
-		switch strings.ToLower(*p.NudgeFunc.Type) {
+		switch strings.ToLower(*p.Mutation.Schedule.Type) {
 		case "exponential":
 			{
-				if p.NudgeFunc.Rate == nil {
-					return errors.New("config error: if nudge_func.type is 'exponential', then nudge_func.rate is required")
+				if p.Mutation.Schedule.Rate == nil {
+					return errors.New("config error: if mutation.schedule.type is 'exponential', then mutation.schedule.rate is required")
 				}
-				if *p.NudgeFunc.Rate <= 0 {
-					return errors.New("config error: nudge_func.rate must be greater than 0")
+				if *p.Mutation.Schedule.Rate <= 0 {
+					return errors.New("config error: mutation.schedule.rate must be greater than 0")
+				}
+				if p.Mutation.Schedule.Exponent != nil || p.Mutation.Schedule.Steps != nil {
+					return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as exponential")
 				}
 			}
 		case "step":
 			{
-				if p.NudgeFunc.Steps == nil {
-					return errors.New("config error: if nudge_func.type is 'step', then nudge_func.steps is required")
+				if p.Mutation.Schedule.Steps == nil {
+					return errors.New("config error: if mutation.schedule.type is 'step', then mutation.schedule.steps is required")
 				}
-				if *p.NudgeFunc.Steps < 1 {
-					return errors.New("config error: nudge_func.steps must be greater than 0")
+				if *p.Mutation.Schedule.Steps < 1 {
+					return errors.New("config error: mutation.schedule.steps must be greater than 0")
+				}
+				if p.Mutation.Schedule.Rate != nil || p.Mutation.Schedule.Exponent != nil {
+					return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as step")
 				}
 			}
 		case "power":
 			{
-				if p.NudgeFunc.Exponent == nil {
-					return errors.New("config error: if nudge_func.type is 'power', then nudge_func.exponent is required")
+				if p.Mutation.Schedule.Exponent == nil {
+					return errors.New("config error: if mutation.schedule.type is 'power', then mutation.schedule.exponent is required")
 				}
-				if *p.NudgeFunc.Exponent <= 0 {
-					return errors.New("config error: nudge_func.exponent must be greater than 0")
+				if *p.Mutation.Schedule.Exponent <= 0 {
+					return errors.New("config error: mutatioin.schedule.exponent must be greater than 0")
+				}
+				if p.Mutation.Schedule.Rate != nil || p.Mutation.Schedule.Steps != nil {
+					return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as power")
+				}
+			}
+		default:
+			{
+				if p.Mutation.Schedule.Rate != nil || p.Mutation.Schedule.Exponent != nil || p.Mutation.Schedule.Steps != nil {
+					return fmt.Errorf("config error: mismatched mutation.schedule fields with mutation.schedule.type as %s", *p.Mutation.Schedule.Type)
 				}
 			}
 		}
 	}
-	if p.NudgeFunc.End != nil && (*p.NudgeFunc.End < 0 || *p.NudgeFunc.End > 1) {
-		return errors.New("config error: nudge_func.end must be in range [0,1]")
+	if p.Mutation.Schedule.End != nil && (*p.Mutation.Schedule.End < 0 || *p.Mutation.Schedule.End > 1) {
+		return errors.New("config error: mutation.schedule.end must be in range [0,1]")
 	}
-	if p.NudgeFunc.Hold != nil && (*p.NudgeFunc.Hold < 0 || *p.NudgeFunc.Hold > 1) {
-		return errors.New("config error: nudge_func.hold must be in range [0,1]")
+	if p.Mutation.Schedule.Hold != nil && (*p.Mutation.Schedule.Hold < 0 || *p.Mutation.Schedule.Hold > 1) {
+		return errors.New("config error: mutation.schedule.hold must be in range [0,1]")
+	}
+	if !slices.Contains([]string{"uniform", "gaussian"}, strings.ToLower(p.Mutation.Distribution)) {
+		return errors.New("config error: mutation.distribution not recognized")
 	}
 	return nil
 }
@@ -274,25 +301,28 @@ func Load(path string) (JsonParams, error) {
 
 	cfg := defaults()
 
-	if err = json.Unmarshal(file, &cfg); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(file))
+	dec.DisallowUnknownFields()
+
+	if err = dec.Decode(&cfg); err != nil {
 		return JsonParams{}, err
 	}
 
-	if cfg.NudgeFunc.Type == nil {
+	if cfg.Mutation.Schedule.Type == nil {
 		t := "quadratic"
 		h := 0.45
 		e := 0.2
-		cfg.NudgeFunc.Type = &t
-		cfg.NudgeFunc.Hold = &h
-		cfg.NudgeFunc.End = &e
+		cfg.Mutation.Schedule.Type = &t
+		cfg.Mutation.Schedule.Hold = &h
+		cfg.Mutation.Schedule.End = &e
 	} else {
-		if cfg.NudgeFunc.Hold == nil {
+		if cfg.Mutation.Schedule.Hold == nil {
 			h := float64(0)
-			cfg.NudgeFunc.Hold = &h
+			cfg.Mutation.Schedule.Hold = &h
 		}
-		if cfg.NudgeFunc.End == nil {
+		if cfg.Mutation.Schedule.End == nil {
 			e := float64(0)
-			cfg.NudgeFunc.End = &e
+			cfg.Mutation.Schedule.End = &e
 		}
 	}
 

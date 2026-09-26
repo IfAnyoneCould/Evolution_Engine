@@ -3,6 +3,7 @@ package simulation
 import (
 	"Evolution_Engine/internal/config"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,6 +133,7 @@ func TestRunStopsAtCycleMax(t *testing.T) {
 
 func TestRunImproves(t *testing.T) {
 	s := newTestSim(t, testConfig("sum", 1000, 60, 20))
+	s.Random = rand.New(rand.NewSource(123456))
 	runQuiet(t, s)
 
 	if s.Pop.TopFitness < 13 {

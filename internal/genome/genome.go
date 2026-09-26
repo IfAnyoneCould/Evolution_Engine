@@ -1,6 +1,7 @@
 package genome
 
 import (
+	"Evolution_Engine/internal/nudge"
 	"fmt"
 	"math/rand"
 )
@@ -79,21 +80,9 @@ func (g *Genome) Init(r *rand.Rand) {
 	}
 }
 
-// Nudge bounds is the range of the nudge. ex: a bounds of .1 can nudge a weight from -0.1 to 0.1
-func (g *Genome) Nudge(bounds float64, r *rand.Rand) {
+func (g *Genome) Nudge(size float64, d nudge.Distribution, r *rand.Rand) {
 	for i := range len(g.Params) {
 		p := &g.Params[i]
-		paramRange := p.Upper - p.Lower
-		nudgeAmount := bounds * paramRange
-		nudge := -nudgeAmount + r.Float64()*2*nudgeAmount
-		test := g.Params[i].Weight + nudge
-		switch {
-		case test > g.Params[i].Upper:
-			g.Params[i].Weight = g.Params[i].Upper
-		case test < g.Params[i].Lower:
-			g.Params[i].Weight = g.Params[i].Lower
-		default:
-			g.Params[i].Weight = test
-		}
+		p.Weight = d.Mutate(p.Weight, p.Lower, p.Upper, size, r)
 	}
 }

@@ -52,6 +52,7 @@ type Population struct {
 	hold         float64
 	end          float64
 	StartFitness float64
+	Distribution nudge.Distribution
 }
 
 func NewPopulation(params config.JsonParams, r *rand.Rand) (*Population, error) {
@@ -65,6 +66,37 @@ func NewPopulation(params config.JsonParams, r *rand.Rand) (*Population, error) 
 		agents = append(agents, a)
 	}
 
+	var nudgeFunc nudge.Function
+
+	switch strings.ToLower(*params.Mutation.Schedule.Type) {
+	case "constant":
+		nudgeFunc = nudge.NewConstantFunction()
+	case "linear":
+		nudgeFunc = nudge.NewLinearFunction()
+	case "quadratic":
+		nudgeFunc = nudge.NewQuadraticFunction()
+	case "power":
+		nudgeFunc = nudge.NewPowerFunction(*params.Mutation.Schedule.Exponent)
+	case "exponential":
+		nudgeFunc = nudge.NewExponentialFunction(*params.Mutation.Schedule.Rate)
+	case "cosine":
+		nudgeFunc = nudge.NewCosineFunction()
+	case "step":
+		nudgeFunc = nudge.NewStepFunction(*params.Mutation.Schedule.Steps)
+	default:
+		return &Population{}, errors.New("config error: mutation.schedule.type not recognized")
+	}
+
+	var d nudge.Distribution
+	switch strings.ToLower(params.Mutation.Distribution) {
+	case "uniform":
+		d = nudge.NewUniformDistribution()
+	case "gaussian":
+		d = nudge.NewGaussianDistribution()
+	default:
+		return &Population{}, errors.New("config error: mutation.distribution not recognized")
+	}
+
 	var procList []*config.SimProcess
 	for range params.Workers {
 		sim, err := config.NewSimProcess(params.Prog.Path, params.Prog.Args, params.SimSettings.Timeout)
@@ -74,28 +106,18 @@ func NewPopulation(params config.JsonParams, r *rand.Rand) (*Population, error) 
 		procList = append(procList, sim)
 	}
 
-	var nudgeFunc nudge.Function
-
-	switch strings.ToLower(*params.NudgeFunc.Type) {
-	case "constant":
-		nudgeFunc = nudge.NewConstantFunction()
-	case "linear":
-		nudgeFunc = nudge.NewLinearFunction()
-	case "quadratic":
-		nudgeFunc = nudge.NewQuadraticFunction()
-	case "power":
-		nudgeFunc = nudge.NewPowerFunction(*params.NudgeFunc.Exponent)
-	case "exponential":
-		nudgeFunc = nudge.NewExponentialFunction(*params.NudgeFunc.Rate)
-	case "cosine":
-		nudgeFunc = nudge.NewCosineFunction()
-	case "step":
-		nudgeFunc = nudge.NewStepFunction(*params.NudgeFunc.Steps)
-	default:
-		return &Population{}, errors.New("config error: nudge_func.type not recognized")
-	}
-
-	return &Population{agents, procList, params.Workers, -1, params.MinNudge, params.Fraction, nudgeFunc, *params.NudgeFunc.Hold, *params.NudgeFunc.End, 0}, nil
+	return &Population{
+		Agents:       agents,
+		ProcList:     procList,
+		WorkerCount:  params.Workers,
+		TopFitness:   -1,
+		MinNudge:     params.Mutation.MinNudge,
+		Fraction:     params.Mutation.Fraction,
+		NudgeFunc:    nudgeFunc,
+		hold:         *params.Mutation.Schedule.Hold,
+		end:          *params.Mutation.Schedule.End,
+		StartFitness: 0,
+		Distribution: d}, nil
 }
 
 func (p *Population) CalcNudge(fit float64, goal float64) float64 {
@@ -198,7 +220,7 @@ func (p *Population) NewGen(sel config.Selection, goal float64, r *rand.Rand) er
 		parent := p.Agents[r.Intn(cutoff)]
 
 		childGene := parent.Gene.Clone()
-		childGene.Nudge(p.CalcNudge(parent.Fitness, goal), r)
+		childGene.Nudge(p.CalcNudge(parent.Fitness, goal), p.Distribution, r)
 		newAgents = append(newAgents, Agent{Gene: childGene, Fitness: math.Inf(-1), Evaluated: false})
 	}
 	p.Agents = newAgents
