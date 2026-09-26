@@ -147,20 +147,20 @@ func defaults() JsonParams {
 		Args: []string{},
 	}
 	nudgeFunc := NudgeFunc{
-		Type:  "Constant",
-		Param: []float64{1},
+		Type:  "quadratic",
+		Param: []float64{1.45},
 	}
 	runSettings := RunSettings{
 		TargetFitness:  0.99,
 		MaxCycles:      500,
-		PopulationSize: 100,
+		PopulationSize: 60,
 	}
 	selection := Selection{
 		Pressure: 0.45,
-		Elite:    2,
+		Elite:    1,
 	}
 	stagnant := StagnationDetect{
-		Patience: 50,
+		Patience: 200,
 		Epsilon:  0.01,
 	}
 	simSettings := SimSettings{
@@ -174,7 +174,7 @@ func defaults() JsonParams {
 		Prog:             prog,
 		Bounds:           nil,
 		Fraction:         0.05,
-		MinNudge:         0.0001,
+		MinNudge:         0.0005,
 		NudgeFunc:        nudgeFunc,
 		RunSettings:      runSettings,
 		Workers:          10,
