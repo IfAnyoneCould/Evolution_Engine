@@ -6,7 +6,7 @@ from math import trunc
 
 # sphere.py with the bowl moved off the origin by a seeded offset. same easy
 # landscape, but catches an optimizer that leans toward zero or the middle of
-# the bounds
+# the weights
 # args: n dims, seed (for the offset), span (half width of each range)
 
 SCALE = 2.0 # log squashed, 0.99 is about raw < 0.02

@@ -32,7 +32,7 @@ func NewAgent(bounds [][2]float64, r *rand.Rand) (Agent, error) {
 }
 
 func (a *Agent) Evaluate(s *config.SimProcess) error {
-	fitness, err := s.Eval(a.Gene)
+	fitness, err := s.Eval(a.Gene.GetWeights())
 	if err != nil {
 		return err
 	}

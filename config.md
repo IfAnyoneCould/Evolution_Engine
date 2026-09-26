@@ -1,6 +1,6 @@
 # Config Settings
 
-List of JSON fields and what they do, along with their defaults. Only `program.path` and `bounds` are required,
+List of JSON fields and what they do, along with their defaults. Only `program.path` and `weights` are required,
 everything else falls back to its default. The config path is the first argument:
 
 ```sh
@@ -12,7 +12,7 @@ Smallest working config:
 ```json
 {
   "program": { "path": "cmd/engine/TestRun.exe", "args": ["8", "0", "5.12"] },
-  "bounds": [[-5.12, 5.12], [-5.12, 5.12]]
+  "weights": [[-5.12, 5.12], [-5.12, 5.12]]
 }
 ```
 
@@ -30,7 +30,7 @@ ___
 
 ---
 
-### bounds ([][2]float64, required)
+### weights ([][2]float64, required)
 
 One `[lower, upper]` pair per weight. The number of pairs sets how many weights the sim gets, in the same order.
 E.g. `[[-1,1],[0,10]]` is a sim with two weights, the first in [-1,1] and the second in [0,10]. Lower can equal upper
@@ -146,7 +146,7 @@ last real improvement by more than epsilon.
 ### output
 
 - weight_path (string) &rarr; file the best weights are written to when the run ends, as a JSON array in the same
-  order as bounds. Overwritten every run. Empty means nothing is written. Default `""`
+  order as weights. Overwritten every run. Empty means nothing is written. Default `""`
 
 ---
 
@@ -155,7 +155,7 @@ last real improvement by more than epsilon.
 ```json
 {
   "program": { "path": "cmd/engine/TestRun.exe", "args": [] },
-  "bounds": [[-5.12, 5.12], [-5.12, 5.12]],
+  "weights": [[-5.12, 5.12], [-5.12, 5.12]],
   "mutation": {
     "distribution": "uniform",
     "fraction": 0.05,
@@ -171,4 +171,4 @@ last real improvement by more than epsilon.
 }
 ```
 
-`program.path` and `bounds` have no defaults, the values above are just an example.
+`program.path` and `weights` have no defaults, the values above are just an example.

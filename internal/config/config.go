@@ -1,7 +1,6 @@
 package config
 
 import (
-	"Evolution_Engine/internal/genome"
 	"bufio"
 	"bytes"
 	"encoding/json"
@@ -52,8 +51,7 @@ func NewSimProcess(path string, args []string, timeout float64) (*SimProcess, er
 	return &SimProcess{cmd, stdin, bufio.NewReader(stdout), time.Duration(timeout * float64(time.Millisecond))}, nil
 }
 
-func (s *SimProcess) Eval(g *genome.Genome) (float64, error) {
-	weights := g.GetWeights()
+func (s *SimProcess) Eval(weights []float64) (float64, error) {
 	jsonBytes, _ := json.Marshal(weights)
 
 	if _, err := s.stdin.Write(append(jsonBytes, '\n')); err != nil {

@@ -6,7 +6,7 @@ import math
 # this plateaus in the same place then 0.91 is just what these settings get you
 #
 # same shape as the engine on purpose so the comparison is fair. same fitness,
-# same genome of n floats in the bounds, truncation + elitism + gaussian
+# same genome of n floats in the weights, truncation + elitism + gaussian
 # mutation, which is the same family as the nudge. stdlib only
 #   python reference_optimizer.py
 

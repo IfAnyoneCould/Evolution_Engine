@@ -2,10 +2,11 @@ package simulation
 
 import (
 	"Evolution_Engine/internal/config"
-	"Evolution_Engine/internal/genome"
-	"Evolution_Engine/internal/population"
+	"Evolution_Engine/internal/optimizers"
+	"Evolution_Engine/internal/pool"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -13,99 +14,101 @@ import (
 )
 
 type Simulation struct {
-	Pop                    *population.Population
+	opt                    optimizers.Optimizer
+	pool                   *pool.Pool
 	cycleMax, currentCycle uint
 	targetFitness          float64
-	newGenConfig           config.Selection
 	stagnation             config.StagnationDetect
 	output                 config.Output
-	Random                 *rand.Rand
 }
 
 func NewSimulation(cfg config.JsonParams) (*Simulation, error) {
 	r := rand.New(rand.NewSource(*cfg.SimSettings.RandSeed))
-	pop, err := population.NewPopulation(cfg, r)
+	opt, err := optimizers.NewGA(cfg, r)
+	if err != nil {
+		return &Simulation{}, err
+	}
+	pool, err := pool.NewPool(cfg)
 	if err != nil {
 		return &Simulation{}, err
 	}
 	fmt.Printf("using random seed: %d\n", *cfg.SimSettings.RandSeed)
-	return &Simulation{pop, cfg.RunSettings.MaxCycles, 0, cfg.RunSettings.TargetFitness, cfg.Selection, cfg.StagnationDetect, cfg.Output, r}, nil
+	return &Simulation{
+		opt:           opt,
+		pool:          pool,
+		cycleMax:      cfg.RunSettings.MaxCycles,
+		currentCycle:  0,
+		targetFitness: cfg.RunSettings.TargetFitness,
+		stagnation:    cfg.StagnationDetect,
+		output:        cfg.Output}, nil
 }
 
 func (s *Simulation) Run() error {
-	total := time.Now()
 	lastTop := float64(0)
+	total := time.Now()
 	cycleSinceImprove := 0
 
-	for range s.cycleMax {
+	for s.currentCycle = 0; s.currentCycle < s.cycleMax; s.currentCycle++ {
 
 		ctx := context.Background()
 		start := time.Now()
-		err := s.Pop.RunBatch(ctx)
+
+		weights, err := s.opt.Ask()
+		if err != nil {
+			if nerr := s.pool.CloseSims(); nerr != nil {
+				return errors.Join(err, nerr)
+			}
+			return err
+		}
+		fit, err := s.pool.Evaluate(ctx, weights)
+		if err != nil {
+			if nerr := s.pool.CloseSims(); nerr != nil {
+				return errors.Join(err, nerr)
+			}
+			return err
+		}
 		fmt.Printf("batch took %v\n", time.Since(start))
-		if s.currentCycle == 0 {
-			s.Pop.StartFitness = s.Pop.TopFitness
-			lastTop = s.Pop.TopFitness
-		}
-		if err != nil {
-			fmt.Printf("Simulation took %v\n", time.Since(total))
-			_ = s.Pop.CloseSims()
-			return err
-		}
-		if s.Pop.TopFitness >= s.targetFitness {
-			fmt.Printf("simulation reached or exceed fitness target %f in %d cycles\n", s.targetFitness, s.currentCycle)
-			fmt.Printf("Simulation took %v\n", time.Since(total))
-			_ = s.Pop.CloseSims()
-			return nil
-		}
-		err = s.Pop.NewGen(s.newGenConfig, s.targetFitness, s.Random)
-		if err != nil {
-			fmt.Printf("Simulation took %v\n", time.Since(total))
-			_ = s.Pop.CloseSims()
+		if err := s.opt.Tell(fit); err != nil {
+			if nerr := s.pool.CloseSims(); nerr != nil {
+				return errors.Join(err, nerr)
+			}
 			return err
 		}
 
-		fmt.Printf("Current cycle: %d -- Max fitness: %f -- Goal Fitness: %f\n", s.currentCycle, s.Pop.TopFitness, s.targetFitness)
-		s.currentCycle++
+		_, bestF := s.opt.Best()
 
-		if s.Pop.TopFitness-lastTop < s.stagnation.Epsilon {
+		if bestF >= s.targetFitness {
+			fmt.Printf("simulation reached a target fitness %f in %d cycles\n", bestF, s.currentCycle)
+			break
+		}
+
+		if bestF-lastTop < s.stagnation.Epsilon {
 			cycleSinceImprove++
 		} else {
 			cycleSinceImprove = 0
-			lastTop = s.Pop.TopFitness
+			lastTop = bestF
 		}
-
 		if cycleSinceImprove >= int(s.stagnation.Patience) {
 			fmt.Printf("simulation exited, didn't see a fitness improvement greater than %f in %d cycles\n", s.stagnation.Epsilon, s.stagnation.Patience)
-			_ = s.Pop.CloseSims()
+			if err := s.pool.CloseSims(); err != nil {
+				return err
+			}
 			return nil
 		}
 
+		if s.currentCycle == 0 {
+			lastTop = bestF
+		}
+		fmt.Printf("Current cycle: %d -- Max fitness: %f -- Goal Fitness: %f\n", s.currentCycle, bestF, s.targetFitness)
 	}
-	fmt.Printf("Reached a fitness of %f in %d cycles. Target fitness: %f\n", s.Pop.TopFitness, s.currentCycle, s.targetFitness)
 	fmt.Printf("Simulation took %v\n", time.Since(total))
-	_ = s.Pop.CloseSims()
+	_ = s.pool.CloseSims()
 	return nil
-}
-
-func (s *Simulation) GetBestGenome() *genome.Genome {
-	s.Pop.Rank()
-	return s.Pop.Agents[0].Gene
-}
-
-func (s *Simulation) GetBestWeights() []float64 {
-	s.Pop.Rank()
-	return s.Pop.Agents[0].Gene.GetWeights()
-}
-
-func (s *Simulation) GetBestAgent() population.Agent {
-	s.Pop.Rank()
-	return s.Pop.Agents[0]
 }
 
 func (s *Simulation) WriteBestWeights() error {
 	if s.output.WeightPath != "" {
-		weights := s.GetBestGenome().GetWeights()
+		weights, _ := s.opt.Best()
 		j, err := json.Marshal(weights)
 		if err != nil {
 			return err
@@ -115,4 +118,8 @@ func (s *Simulation) WriteBestWeights() error {
 		}
 	}
 	return nil
+}
+
+func (s *Simulation) GetBestWeights() ([]float64, float64) {
+	return s.opt.Best()
 }

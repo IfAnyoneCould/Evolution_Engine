@@ -1,6 +1,6 @@
 # Evolution_Engine
 
-A genetic algorithm optimiser in Go. You give it a program and a set of bounds,
+A genetic algorithm optimiser in Go. You give it a program and a set of weights,
 and it evolves a vector of weights that maximises whatever score your program
 prints back.
 
@@ -18,7 +18,7 @@ that can read stdin and write stdout can be optimised, in any language.
 ```
 
 1. A population of agents is created, each holding a genome of `n` floats
-   inside per-dimension bounds.
+   inside per-dimension weights.
 2. `RunBatch` distributes agents over a pool of persistent worker processes via
    a buffered channel and a `sync.WaitGroup`.
 3. Agents are ranked, and `NewGen` builds the next generation with elitism and
@@ -46,16 +46,16 @@ can never fully stop moving. All of it is set from the config.
 ```json
 {
   "program": { "path": "cmd/engine/TestRun.exe", "args": ["8", "0", "5.12"] },
-  "bounds": [[-5.12, 5.12], [-5.12, 5.12]]
+  "weights": [[-5.12, 5.12], [-5.12, 5.12]]
 }
 ```
 
-`bounds` has one entry per dimension and sets both the genome length and the
+`weights` has one entry per dimension and sets both the genome length and the
 legal range of each weight. The bundled example optimises the Rastrigin
 function in 8 dimensions — a standard benchmark chosen because it's covered in
 local minima and will expose an optimiser that converges too early.
 
-Only `program` and `bounds` are required, everything else has a tuned default.
+Only `program` and `weights` are required, everything else has a tuned default.
 Every option is in [config.md](config.md).
 
 ## Running
@@ -107,7 +107,7 @@ python examples/reference_optimizer.py
 | Package | Responsibility |
 | --- | --- |
 | `internal/config` | config loading, defaults and validation, and `SimProcess` — the worker pipe |
-| `internal/genome` | weight vectors, bounds, mutation |
+| `internal/genome` | weight vectors, weights, mutation |
 | `internal/population` | agents, worker pool, ranking, generation building |
 | `internal/nudge` | mutation schedules and step distributions |
 | `internal/simulation` | the outer loop and stopping conditions |

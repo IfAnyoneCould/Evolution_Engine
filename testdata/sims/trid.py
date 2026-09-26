@@ -5,7 +5,7 @@ from math import trunc
 
 # a convex bowl, but the neighbor products tilt it into a long diagonal trough
 # and the optimum is at x_i = i*(n+1-i), nowhere near the origin or the middle.
-# bounds are +-n^2
+# weights are +-n^2
 # args: n dims
 
 SCALE = 100.0 # log squashed, 0.99 is about raw < 1

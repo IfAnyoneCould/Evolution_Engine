@@ -7,7 +7,6 @@ import (
 	"os"
 )
 
-// TODO make a md doc or something will all of the config options, so understanding the config is simple and fast. This is for development, the main readme will be done later
 // TODO change all errors and communication to be compatible with a frontend app, not just spitting information out into the terminal
 
 func main() {
@@ -36,5 +35,6 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Best weights: %v", sim.GetBestWeights())
+	_, best := sim.GetBestWeights()
+	fmt.Printf("Best weights: %v", best)
 }

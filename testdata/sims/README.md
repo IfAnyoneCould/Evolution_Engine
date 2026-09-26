@@ -5,7 +5,7 @@ Simulations for testing the engine as a black box optimiser. Same protocol as
 fitness. Every sim scores in [0,1], and 0.99 only happens at or right next to
 the optimum. Wrong weight counts score 0.
 
-Each sim has a sel in `configs/` with its args and bounds filled in. Paths
+Each sim has a sel in `configs/` with its args and weights filled in. Paths
 are relative to the repo root.
 
 The python ones are stdlib only. The go ones need building first
@@ -23,7 +23,7 @@ Cost is per eval at the default args, measured on the pipe.
 | `sphere` | 8 | convex baseline | <0.1ms |
 | `rosenbrock` | 8 | curved narrow valley | <0.1ms |
 | `ackley` | 8 | flat plateau with one funnel | <0.1ms |
-| `schwefel` | 8 | deceptive, optimum near the bounds edge | <0.1ms |
+| `schwefel` | 8 | deceptive, optimum near the weights edge | <0.1ms |
 | `griewank` | 8 | bowl with ripples, product coupling | <0.1ms |
 | `levy` | 8 | wavy multimodal | <0.1ms |
 | `styblinski_tang` | 8 | 2^n basins | <0.1ms |
