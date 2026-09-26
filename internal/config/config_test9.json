@@ -6,7 +6,6 @@
     [-1,1]
   ],
   "nudge_func": {
-    "type": "LINEAR",
-    "params": [1.0]
+    "type": "LINEAR"
   }
 }

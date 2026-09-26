@@ -9,7 +9,8 @@
   "fraction": 0.2,
   "min_nudge": 0.01,
   "nudge_func": {
-    "type": "constant",
-    "params": [0.5]
+    "type": "linear",
+    "hold": 0.3,
+    "end": 0.1
   }
 }

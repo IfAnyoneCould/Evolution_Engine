@@ -6,7 +6,7 @@
     [-1,1]
   ],
   "nudge_func": {
-    "type": "quadratic",
-    "params": [2.0, 9.0]
+    "type": "power",
+    "exponent": 3
   }
 }

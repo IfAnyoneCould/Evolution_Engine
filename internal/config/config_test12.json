@@ -6,7 +6,6 @@
     [-1,1]
   ],
   "nudge_func": {
-    "type": "linear",
-    "params": []
+    "type": "exponential"
   }
 }

@@ -1,9 +1,12 @@
 package genome
 
 import (
+	"math/rand"
 	"slices"
 	"testing"
 )
+
+var testRand = rand.New(rand.NewSource(1))
 
 func TestBoundsUniform(t *testing.T) {
 	tests := []struct {
@@ -81,7 +84,7 @@ func TestBounds(t *testing.T) {
 func TestInit(t *testing.T) {
 	g := NewGenome(50)
 	g.SetBoundsUniform(-2, 5)
-	g.Init()
+	g.Init(testRand)
 	for i, p := range g.Params {
 		if p.Weight < p.Lower || p.Weight > p.Upper {
 			t.Errorf("param %d: weight %f outside bounds [%f, %f]", i, p.Weight, p.Lower, p.Upper)
@@ -92,9 +95,9 @@ func TestInit(t *testing.T) {
 func TestNudgeChangesWeights(t *testing.T) {
 	g := NewGenome(20)
 	g.SetBoundsUniform(-10, 10)
-	g.Init()
+	g.Init(testRand)
 	before := g.GetWeights()
-	g.Nudge(1.0)
+	g.Nudge(1.0, testRand)
 	after := g.GetWeights()
 	if slices.Equal(before, after) {
 		t.Errorf("nudge changed nothing; weights identical before and after")
@@ -180,7 +183,7 @@ func TestClone(t *testing.T) {
 	if err := g.SetBoundsUniform(-5, 5); err != nil {
 		t.Fatalf("could not set bounds: %v", err)
 	}
-	g.Init()
+	g.Init(testRand)
 
 	c := g.Clone()
 	if !slices.Equal(g.GetWeights(), c.GetWeights()) {
@@ -188,7 +191,7 @@ func TestClone(t *testing.T) {
 	}
 
 	before := g.GetWeights()
-	c.Nudge(1.0)
+	c.Nudge(1.0, testRand)
 	if !slices.Equal(g.GetWeights(), before) {
 		t.Errorf("nudging the clone changed the original: %v vs %v", before, g.GetWeights())
 	}
@@ -215,9 +218,9 @@ func TestNudgeStaysInBounds(t *testing.T) {
 			if err := g.SetBounds(genBoundsArray(-1, 1, 0, 10, -100, -50, 5, 5, -0.5, 0.5)...); err != nil {
 				t.Fatalf("could not set bounds: %v", err)
 			}
-			g.Init()
+			g.Init(testRand)
 			for range 100 {
-				g.Nudge(tt.bounds)
+				g.Nudge(tt.bounds, testRand)
 				for i, p := range g.Params {
 					if p.Weight < p.Lower || p.Weight > p.Upper {
 						t.Fatalf("param %d: weight %f outside bounds [%f, %f]", i, p.Weight, p.Lower, p.Upper)
@@ -233,9 +236,9 @@ func TestNudgeZeroDoesNothing(t *testing.T) {
 	if err := g.SetBoundsUniform(-3, 3); err != nil {
 		t.Fatalf("could not set bounds: %v", err)
 	}
-	g.Init()
+	g.Init(testRand)
 	before := g.GetWeights()
-	g.Nudge(0)
+	g.Nudge(0, testRand)
 	if !slices.Equal(before, g.GetWeights()) {
 		t.Errorf("a nudge of 0 moved the weights: %v became %v", before, g.GetWeights())
 	}
@@ -246,8 +249,8 @@ func TestNudgeFixedParamStays(t *testing.T) {
 	if err := g.SetBounds(genBoundsArray(5, 5, -1, 1)...); err != nil {
 		t.Fatalf("could not set bounds: %v", err)
 	}
-	g.Init()
-	g.Nudge(1.0)
+	g.Init(testRand)
+	g.Nudge(1.0, testRand)
 	if g.Params[0].Weight != 5 {
 		t.Errorf("fixed param moved off its bound: expected %f, got %f", 5.0, g.Params[0].Weight)
 	}
@@ -262,9 +265,28 @@ func TestInitVaries(t *testing.T) {
 	if err := b.SetBoundsUniform(-10, 10); err != nil {
 		t.Fatalf("could not set bounds: %v", err)
 	}
-	a.Init()
-	b.Init()
+	a.Init(testRand)
+	b.Init(testRand)
 	if slices.Equal(a.GetWeights(), b.GetWeights()) {
 		t.Errorf("two initialised genomes came out identical: %v", a.GetWeights())
+	}
+}
+
+func TestSameSeedSameGenome(t *testing.T) {
+	a := NewGenome(10)
+	b := NewGenome(10)
+	if err := a.SetBoundsUniform(-10, 10); err != nil {
+		t.Fatalf("could not set bounds: %v", err)
+	}
+	if err := b.SetBoundsUniform(-10, 10); err != nil {
+		t.Fatalf("could not set bounds: %v", err)
+	}
+	ra, rb := rand.New(rand.NewSource(42)), rand.New(rand.NewSource(42))
+	a.Init(ra)
+	b.Init(rb)
+	a.Nudge(0.1, ra)
+	b.Nudge(0.1, rb)
+	if !slices.Equal(a.GetWeights(), b.GetWeights()) {
+		t.Errorf("same seed gave different genomes: %v and %v", a.GetWeights(), b.GetWeights())
 	}
 }

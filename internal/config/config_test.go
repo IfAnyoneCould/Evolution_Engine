@@ -86,7 +86,7 @@ func TestLoad(t *testing.T) {
 			genBoundsArray(-1, 1, -1, 1, -1, 1, 0, 0, 2, 2, -10, 100),
 			Program{"test_program.exe", []string{}},
 			0.1,
-			0.0001,
+			0.0005,
 			false,
 		},
 		{
@@ -104,7 +104,7 @@ func TestLoad(t *testing.T) {
 			genBoundsArray(-1, 1, -1, 1, -1, 1, 0, 0, 2, 2, -10, 100),
 			Program{"test_program.exe", []string{}},
 			0.05,
-			0.0001,
+			0.0005,
 			false,
 		},
 		{
@@ -113,7 +113,7 @@ func TestLoad(t *testing.T) {
 			genBoundsArray(-1, 1, 0, 5),
 			Program{"test_program.exe", []string{"-v", "--seed", "42"}},
 			0.1,
-			0.0001,
+			0.0005,
 			false,
 		},
 		{
@@ -204,19 +204,20 @@ func TestLoad(t *testing.T) {
 
 func TestLoadNudgeFunc(t *testing.T) {
 	tests := []struct {
-		Name      string
-		Path      string
-		WantType  string
-		WantParam []float64
-		WantErr   bool
+		Name     string
+		Path     string
+		WantType string
+		WantHold float64
+		WantEnd  float64
+		WantErr  bool
 	}{
-		{"no nudge func defaults to constant 1", "config_test1.json", "constant", []float64{1}, false},
-		{"constant", "config_test8.json", "constant", []float64{0.5}, false},
-		{"type is case insensitive", "config_test9.json", "linear", []float64{1}, false},
-		{"extra params are kept", "config_test10.json", "quadratic", []float64{2, 9}, false},
-		{"unknown type", "config_test11.json", "", nil, true},
-		{"no params", "config_test12.json", "", nil, true},
-		{"no type defaults to constant", "config_test13.json", "constant", []float64{1}, false},
+		{"no nudge func gets the tuned default", "config_test1.json", "quadratic", 0.45, 0.2, false},
+		{"hold and end set", "config_test8.json", "linear", 0.3, 0.1, false},
+		{"type is case insensitive, hold and end default to 0", "config_test9.json", "linear", 0, 0, false},
+		{"power with its exponent", "config_test10.json", "power", 0, 0, false},
+		{"unknown type", "config_test11.json", "", 0, 0, true},
+		{"exponential without a rate", "config_test12.json", "", 0, 0, true},
+		{"step without steps", "config_test13.json", "", 0, 0, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
@@ -230,13 +231,30 @@ func TestLoadNudgeFunc(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if !strings.EqualFold(cfg.NudgeFunc.Type, tt.WantType) {
-				t.Errorf("incorrect type: wanted %s, got %s", tt.WantType, cfg.NudgeFunc.Type)
+			n := cfg.NudgeFunc
+			if n.Type == nil || n.Hold == nil || n.End == nil {
+				t.Fatalf("type, hold and end should always be filled in by Load, got %+v", n)
 			}
-			if !slices.Equal(cfg.NudgeFunc.Param, tt.WantParam) {
-				t.Errorf("incorrect params: wanted %v, got %v", tt.WantParam, cfg.NudgeFunc.Param)
+			if !strings.EqualFold(*n.Type, tt.WantType) {
+				t.Errorf("incorrect type: wanted %s, got %s", tt.WantType, *n.Type)
+			}
+			if *n.Hold != tt.WantHold {
+				t.Errorf("incorrect hold: wanted %f, got %f", tt.WantHold, *n.Hold)
+			}
+			if *n.End != tt.WantEnd {
+				t.Errorf("incorrect end: wanted %f, got %f", tt.WantEnd, *n.End)
 			}
 		})
+	}
+}
+
+func TestLoadNudgeFuncExtraFields(t *testing.T) {
+	cfg, err := Load("config_test10.json")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.NudgeFunc.Exponent == nil || *cfg.NudgeFunc.Exponent != 3 {
+		t.Errorf("exponent not loaded: wanted 3, got %v", cfg.NudgeFunc.Exponent)
 	}
 }
 
@@ -263,7 +281,22 @@ func TestLoadValidation(t *testing.T) {
 		{"no epsilon", `,"stagnation_detection":{"epsilon":0}`, true},
 		{"negative epsilon", `,"stagnation_detection":{"epsilon":-0.1}`, true},
 		{"no timeout", `,"sim_settings":{"timeout_ms":0}`, true},
-		{"nudge type in caps", `,"nudge_func":{"type":"QUADRATIC","params":[2]}`, false},
+		{"nudge type in caps", `,"nudge_func":{"type":"QUADRATIC"}`, false},
+		{"every nudge type is accepted", `,"nudge_func":{"type":"cosine"}`, false},
+		{"hold and end inside the range", `,"nudge_func":{"type":"linear","hold":0.5,"end":0.5}`, false},
+		{"negative hold", `,"nudge_func":{"type":"linear","hold":-0.1}`, true},
+		{"hold above 1", `,"nudge_func":{"type":"linear","hold":1.5}`, true},
+		{"negative end", `,"nudge_func":{"type":"linear","end":-0.1}`, true},
+		{"end above 1", `,"nudge_func":{"type":"linear","end":1.5}`, true},
+		{"power with a good exponent", `,"nudge_func":{"type":"power","exponent":0.5}`, false},
+		{"power without an exponent", `,"nudge_func":{"type":"power"}`, true},
+		{"power exponent of 0", `,"nudge_func":{"type":"power","exponent":0}`, true},
+		{"negative power exponent", `,"nudge_func":{"type":"power","exponent":-1}`, true},
+		{"exponential with a good rate", `,"nudge_func":{"type":"exponential","rate":4}`, false},
+		{"exponential rate of 0", `,"nudge_func":{"type":"exponential","rate":0}`, true},
+		{"exponential in caps still needs a rate", `,"nudge_func":{"type":"Exponential"}`, true},
+		{"step with steps", `,"nudge_func":{"type":"step","steps":4}`, false},
+		{"step with 0 steps", `,"nudge_func":{"type":"step","steps":0}`, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
@@ -286,7 +319,7 @@ func TestLoadPartialSection(t *testing.T) {
 	if cfg.RunSettings.MaxCycles != 10 {
 		t.Errorf("incorrect max cycles: wanted %d, got %d", 10, cfg.RunSettings.MaxCycles)
 	}
-	if cfg.RunSettings.PopulationSize != 100 {
+	if cfg.RunSettings.PopulationSize != 60 {
 		t.Errorf("setting one field wiped the default population size: got %d", cfg.RunSettings.PopulationSize)
 	}
 	if cfg.RunSettings.TargetFitness != 0.99 {

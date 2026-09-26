@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,10 @@ import (
 )
 
 var simBin string
+
+var testRand = rand.New(rand.NewSource(1))
+
+func ptr[T any](v T) *T { return &v }
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "evoengine")
@@ -40,18 +45,18 @@ func testConfig(mode string, dims int, agents int, workers int) config.JsonParam
 		Bounds:           bounds,
 		Fraction:         0.05,
 		MinNudge:         0.0001,
-		NudgeFunc:        config.NudgeFunc{Type: "constant", Param: []float64{1}},
+		NudgeFunc:        config.NudgeFunc{Type: ptr("constant"), Hold: ptr(0.0), End: ptr(0.0)},
 		RunSettings:      config.RunSettings{TargetFitness: 1000, MaxCycles: 10, PopulationSize: uint(agents)},
 		Workers:          uint(workers),
 		Selection:        config.Selection{Pressure: 0.45, Elite: 1},
 		StagnationDetect: config.StagnationDetect{Patience: 1000, Epsilon: 0.01},
-		SimSettings:      config.SimSettings{Timeout: 5000},
+		SimSettings:      config.SimSettings{Timeout: 5000, RandSeed: ptr(int64(1))},
 	}
 }
 
 func newTestPop(t *testing.T, mode string, agents int, workers int) *Population {
 	t.Helper()
-	p, err := NewPopulation(testConfig(mode, 3, agents, workers))
+	p, err := NewPopulation(testConfig(mode, 3, agents, workers), testRand)
 	if err != nil {
 		t.Fatalf("could not build the population: %v", err)
 	}
@@ -80,7 +85,7 @@ func TestNewAgent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a, err := NewAgent(tt.bounds)
+			a, err := NewAgent(tt.bounds, testRand)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error")
@@ -120,11 +125,11 @@ func TestNewPopulation(t *testing.T) {
 	if p.WorkerCount != uint(len(p.ProcList)) {
 		t.Errorf("WorkerCount %d does not match the %d processes started", p.WorkerCount, len(p.ProcList))
 	}
-	if p.BaseFraction != 0.05 {
-		t.Errorf("incorrect fraction: expected %f, got %f", 0.05, p.BaseFraction)
+	if p.Fraction != 0.05 {
+		t.Errorf("incorrect fraction: expected %f, got %f", 0.05, p.Fraction)
 	}
-	if p.Fraction != 0.0001 {
-		t.Errorf("incorrect min nudge: expected %f, got %f", 0.0001, p.Fraction)
+	if p.MinNudge != 0.0001 {
+		t.Errorf("incorrect min nudge: expected %f, got %f", 0.0001, p.MinNudge)
 	}
 	if p.NudgeFunc == nil {
 		t.Errorf("no nudge function set")
@@ -143,29 +148,36 @@ func TestNewPopulationNudgeFunc(t *testing.T) {
 		progress float64
 		want     float64
 	}{
-		{"constant", config.NudgeFunc{Type: "constant", Param: []float64{0.5}}, 0.9, 0.5},
-		{"linear", config.NudgeFunc{Type: "linear", Param: []float64{1}}, 0.25, 0.75},
-		{"quadratic", config.NudgeFunc{Type: "quadratic", Param: []float64{1}}, 0.5, 0.25},
-		{"type is case insensitive", config.NudgeFunc{Type: "LINEAR", Param: []float64{1}}, 0.25, 0.75},
-		{"extra params are ignored", config.NudgeFunc{Type: "quadratic", Param: []float64{2, 9}}, 1, 1},
+		{"constant", config.NudgeFunc{Type: ptr("constant")}, 0.9, 1},
+		{"linear", config.NudgeFunc{Type: ptr("linear")}, 0.25, 0.75},
+		{"quadratic", config.NudgeFunc{Type: ptr("quadratic")}, 0.5, 0.25},
+		{"power", config.NudgeFunc{Type: ptr("power"), Exponent: ptr(3.0)}, 0.5, 0.125},
+		{"exponential", config.NudgeFunc{Type: ptr("exponential"), Rate: ptr(4.0)}, 1, 0},
+		{"cosine", config.NudgeFunc{Type: ptr("cosine")}, 0.5, 0.5},
+		{"step", config.NudgeFunc{Type: ptr("step"), Steps: ptr(uint(4))}, 0.3, 0.75},
+		{"type is case insensitive", config.NudgeFunc{Type: ptr("LINEAR")}, 0.25, 0.75},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := testConfig("sum", 2, 4, 1)
 			cfg.Fraction = 0.3
 			cfg.MinNudge = 0.02
+			tt.function.Hold, tt.function.End = ptr(0.1), ptr(0.2)
 			cfg.NudgeFunc = tt.function
-			p, err := NewPopulation(cfg)
+			p, err := NewPopulation(cfg, testRand)
 			if err != nil {
 				t.Fatalf("could not build the population: %v", err)
 			}
 			defer p.CloseSims()
 
-			if p.BaseFraction != 0.3 {
-				t.Errorf("incorrect fraction: expected %f, got %f", 0.3, p.BaseFraction)
+			if p.Fraction != 0.3 {
+				t.Errorf("incorrect fraction: expected %f, got %f", 0.3, p.Fraction)
 			}
-			if p.Fraction != 0.02 {
-				t.Errorf("incorrect min nudge: expected %f, got %f", 0.02, p.Fraction)
+			if p.MinNudge != 0.02 {
+				t.Errorf("incorrect min nudge: expected %f, got %f", 0.02, p.MinNudge)
+			}
+			if p.hold != 0.1 || p.end != 0.2 {
+				t.Errorf("hold and end not carried over: expected 0.1 and 0.2, got %f and %f", p.hold, p.end)
 			}
 			if p.NudgeFunc == nil {
 				t.Fatalf("no nudge function set")
@@ -177,10 +189,18 @@ func TestNewPopulationNudgeFunc(t *testing.T) {
 	}
 }
 
+func TestNewPopulationUnknownNudgeFunc(t *testing.T) {
+	cfg := testConfig("sum", 2, 4, 1)
+	cfg.NudgeFunc.Type = ptr("sawtooth")
+	if _, err := NewPopulation(cfg, testRand); err == nil {
+		t.Errorf("expected error")
+	}
+}
+
 func TestNewPopulationBadProgram(t *testing.T) {
 	cfg := testConfig("sum", 3, 5, 2)
 	cfg.Prog.Path = filepath.Join(t.TempDir(), "not_a_program.exe")
-	if _, err := NewPopulation(cfg); err == nil {
+	if _, err := NewPopulation(cfg, testRand); err == nil {
 		t.Errorf("expected error")
 	}
 }
@@ -216,24 +236,32 @@ func TestCalcNudge(t *testing.T) {
 	tests := []struct {
 		name        string
 		function    nudge.Function
-		base        float64
+		hold, end   float64
+		fraction    float64
 		minNudge    float64
 		start, goal float64
 		fit         float64
 		want        float64
 	}{
-		{"constant ignores progress", nudge.NewConstantFunction(1), 0.1, 0.001, 0, 100, 50, 0.1},
-		{"linear at the start", nudge.NewLinearFunction(1), 0.1, 0.001, 0, 100, 0, 0.1},
-		{"linear halfway", nudge.NewLinearFunction(1), 0.1, 0.001, 0, 100, 50, 0.05},
-		{"quadratic halfway", nudge.NewQuadraticFunction(1), 0.1, 0.001, 0, 100, 50, 0.025},
-		{"floor applies at the goal", nudge.NewLinearFunction(1), 0.1, 0.001, 0, 100, 100, 0.001},
-		{"progress clamps above the goal", nudge.NewLinearFunction(1), 0.1, 0.001, 0, 100, 500, 0.001},
-		{"progress clamps below the start", nudge.NewLinearFunction(1), 0.1, 0.001, 0, 100, -500, 0.1},
-		{"negative fitness range", nudge.NewLinearFunction(1), 0.2, 0.001, -100, -50, -75, 0.1},
+		{"constant ignores progress", nudge.NewConstantFunction(), 0, 0, 0.1, 0.001, 0, 100, 50, 0.1},
+		{"constant ignores hold and end", nudge.NewConstantFunction(), 0.5, 0.2, 0.1, 0.001, 0, 100, 90, 0.1},
+		{"linear at the start", nudge.NewLinearFunction(), 0, 0, 0.1, 0.001, 0, 100, 0, 0.1},
+		{"linear halfway", nudge.NewLinearFunction(), 0, 0, 0.1, 0.001, 0, 100, 50, 0.05},
+		{"quadratic halfway", nudge.NewQuadraticFunction(), 0, 0, 0.1, 0.001, 0, 100, 50, 0.025},
+		{"floor applies at the goal", nudge.NewLinearFunction(), 0, 0, 0.1, 0.001, 0, 100, 100, 0.001},
+		{"progress clamps above the goal", nudge.NewLinearFunction(), 0, 0, 0.1, 0.001, 0, 100, 500, 0.001},
+		{"progress clamps below the start", nudge.NewLinearFunction(), 0, 0, 0.1, 0.001, 0, 100, -500, 0.1},
+		{"negative fitness range", nudge.NewLinearFunction(), 0, 0, 0.2, 0.001, -100, -50, -75, 0.1},
+		{"full nudge before hold", nudge.NewLinearFunction(), 0.5, 0, 0.1, 0.001, 0, 100, 25, 0.1},
+		{"decay starts at hold", nudge.NewLinearFunction(), 0.5, 0, 0.1, 0.001, 0, 100, 75, 0.05},
+		{"end is the value at the goal", nudge.NewLinearFunction(), 0, 0.2, 0.1, 0.001, 0, 100, 100, 0.02},
+		{"hold and end together", nudge.NewQuadraticFunction(), 0.5, 0.2, 0.1, 0.001, 0, 100, 75, 0.04},
+		{"floor still applies under end", nudge.NewLinearFunction(), 0, 0.001, 0.1, 0.01, 0, 100, 100, 0.01},
+		{"hold of 1 never decays", nudge.NewLinearFunction(), 1, 0, 0.1, 0.001, 0, 100, 90, 0.1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Population{BaseFraction: tt.base, Fraction: tt.minNudge, NudgeFunc: tt.function, StartFitness: tt.start}
+			p := &Population{Fraction: tt.fraction, MinNudge: tt.minNudge, NudgeFunc: tt.function, hold: tt.hold, end: tt.end, StartFitness: tt.start}
 			got := p.CalcNudge(tt.fit, tt.goal)
 			if math.Abs(got-tt.want) > 1e-9 {
 				t.Errorf("incorrect nudge: expected %f, got %f", tt.want, got)
@@ -326,7 +354,7 @@ func TestRunBatchAfterNewGen(t *testing.T) {
 	if err := p.RunBatch(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.5}, 1000); err != nil {
+	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.5}, 1000, testRand); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -383,7 +411,7 @@ func TestNewGen(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := newTestPop(t, "sum", tt.agents, 2)
-			p.NudgeFunc = nudge.NewConstantFunction(1)
+			p.NudgeFunc = nudge.NewConstantFunction()
 			if err := p.RunBatch(context.Background()); err != nil {
 				t.Fatalf("could not run the first batch: %v", err)
 			}
@@ -391,7 +419,7 @@ func TestNewGen(t *testing.T) {
 			best := p.Agents[0].Gene.GetWeights()
 			bestFitness := p.Agents[0].Fitness
 
-			err := p.NewGen(tt.config, 1000)
+			err := p.NewGen(tt.config, 1000, testRand)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error")
@@ -435,7 +463,7 @@ func TestNewGen(t *testing.T) {
 func TestNewGenUnevaluatedElite(t *testing.T) {
 	p := newTestPop(t, "sum", 20, 2)
 
-	if err := p.NewGen(config.Selection{Elite: 2, Pressure: 0.5}, 1000); err != nil {
+	if err := p.NewGen(config.Selection{Elite: 2, Pressure: 0.5}, 1000, testRand); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(p.Agents) != 20 {
@@ -453,11 +481,11 @@ func TestNewGenUnevaluatedElite(t *testing.T) {
 
 func TestNewGenChildrenAreOwnGenomes(t *testing.T) {
 	p := newTestPop(t, "sum", 10, 2)
-	p.NudgeFunc = nudge.NewConstantFunction(1)
+	p.NudgeFunc = nudge.NewConstantFunction()
 	if err := p.RunBatch(context.Background()); err != nil {
 		t.Fatalf("could not run the first batch: %v", err)
 	}
-	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.5}, 1000); err != nil {
+	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.5}, 1000, testRand); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -470,7 +498,7 @@ func TestNewGenChildrenAreOwnGenomes(t *testing.T) {
 	}
 
 	before := p.Agents[len(p.Agents)-1].Gene.GetWeights()
-	p.Agents[0].Gene.Nudge(1.0)
+	p.Agents[0].Gene.Nudge(1.0, testRand)
 	after := p.Agents[len(p.Agents)-1].Gene.GetWeights()
 	for i := range before {
 		if before[i] != after[i] {
@@ -481,16 +509,16 @@ func TestNewGenChildrenAreOwnGenomes(t *testing.T) {
 
 func TestNewGenPullsFromTheTop(t *testing.T) {
 	p := newTestPop(t, "sum", 40, 2)
-	p.NudgeFunc = nudge.NewConstantFunction(1)
-	p.BaseFraction = 0
+	p.NudgeFunc = nudge.NewConstantFunction()
 	p.Fraction = 0
+	p.MinNudge = 0
 	if err := p.RunBatch(context.Background()); err != nil {
 		t.Fatalf("could not run the first batch: %v", err)
 	}
 	p.Rank()
 	worst := p.Agents[len(p.Agents)-1].Gene.GetWeights()
 
-	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.25}, 1000); err != nil {
+	if err := p.NewGen(config.Selection{Elite: 1, Pressure: 0.25}, 1000, testRand); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for i, a := range p.Agents {
@@ -501,7 +529,7 @@ func TestNewGenPullsFromTheTop(t *testing.T) {
 }
 
 func TestCloseSims(t *testing.T) {
-	p, err := NewPopulation(testConfig("sum", 3, 4, 2))
+	p, err := NewPopulation(testConfig("sum", 3, 4, 2), testRand)
 	if err != nil {
 		t.Fatalf("could not build the population: %v", err)
 	}

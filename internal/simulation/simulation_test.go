@@ -6,10 +6,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
 var simBin string
+
+func ptr[T any](v T) *T { return &v }
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "evoengine")
@@ -37,12 +40,12 @@ func testConfig(mode string, target float64, cycles int, agents int) config.Json
 		Bounds:           bounds,
 		Fraction:         0.05,
 		MinNudge:         0.0001,
-		NudgeFunc:        config.NudgeFunc{Type: "constant", Param: []float64{1}},
+		NudgeFunc:        config.NudgeFunc{Type: ptr("constant"), Hold: ptr(0.0), End: ptr(0.0)},
 		RunSettings:      config.RunSettings{TargetFitness: target, MaxCycles: uint(cycles), PopulationSize: uint(agents)},
 		Workers:          4,
 		Selection:        config.Selection{Pressure: 0.45, Elite: 2},
 		StagnationDetect: config.StagnationDetect{Patience: 1000, Epsilon: 0.01},
-		SimSettings:      config.SimSettings{Timeout: 5000},
+		SimSettings:      config.SimSettings{Timeout: 5000, RandSeed: ptr(int64(1))},
 	}
 }
 
@@ -200,5 +203,22 @@ func TestRunSetsStartFitness(t *testing.T) {
 
 	if s.Pop.StartFitness != 3 {
 		t.Errorf("incorrect start fitness: expected the first generation's best of %f, got %f", 3.0, s.Pop.StartFitness)
+	}
+}
+
+func TestSameSeedSameRun(t *testing.T) {
+	run := func(seed int64) []float64 {
+		cfg := testConfig("sum", 1000, 15, 20)
+		cfg.SimSettings.RandSeed = ptr(seed)
+		s := newTestSim(t, cfg)
+		runQuiet(t, s)
+		return s.GetBestWeights()
+	}
+	a, b := run(7), run(7)
+	if !slices.Equal(a, b) {
+		t.Errorf("same seed gave different runs: %v and %v", a, b)
+	}
+	if c := run(8); slices.Equal(a, c) {
+		t.Errorf("different seeds gave the same run: %v", a)
 	}
 }

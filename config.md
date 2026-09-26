@@ -40,30 +40,44 @@ to hold a weight fixed. Lower above upper errors when the run starts.
 ### Mutation
 
 Every child is a copy of a parent with each weight moved by a random amount, uniform in ±(nudge size × that weight's
-range), then clamped to its bounds. The nudge size shrinks as the parent gets closer to the target:
+range), then clamped to its bounds. The nudge size follows a schedule that shrinks as the parent gets closer to the
+target:
 
 ```
-nudge size = max(fraction × nudge_func(progress), min_nudge)
+u          = clamp((progress - hold) / (1 - hold), 0, 1)
+f          = end + (1 - end) × shape(u)
+nudge size = max(fraction × f, min_nudge)
 ```
 
-progress runs from 0 at the first generation's best fitness to 1 at `run_settings.target_fitness`.
+progress runs from 0 at the first generation's best fitness to 1 at `run_settings.target_fitness`. Until progress
+reaches hold the nudge stays at full size, then the shape takes it down to end by the target.
 
 - fraction (float64) &rarr; the largest nudge, as a fraction of each weight's range. 0.05 on [-1,1] moves a weight by
   at most ±0.1. Default `0.05`
-- min_nudge (float64) &rarr; floor on the nudge size, same units as fraction, so late generations still move. Above
-  fraction it just becomes the nudge size for the whole run. Default `0.0005`
-- nudge_func &rarr; how the nudge shrinks with progress. Its value is clamped to [0,1]
-  - type (string) &rarr; `constant`, `linear` or `quadratic`, case insensitive. Default `quadratic`
-  - params ([]float64) &rarr; needs at least one value, only the first is used. Default `[1.45]`
+- min_nudge (float64) &rarr; floor on the nudge size, same units as fraction. With end above 0 the schedule already
+  has a floor of fraction × end, so this only matters when that's smaller. Above fraction it just becomes the nudge
+  size for the whole run. Default `0.0005`
+- nudge_func &rarr; the schedule. Only give the fields the type uses
+  - type (string) &rarr; one of the types below, case insensitive
+  - hold (float64) &rarr; progress where the decay starts, 0 to 1. 1 never decays
+  - end (float64) &rarr; the nudge at the target, as a fraction of the full nudge, 0 to 1
+  - exponent (float64) &rarr; power only, above 0
+  - rate (float64) &rarr; exponential only, above 0
+  - steps (uint) &rarr; step only, 1 or more
 
-| type | value at progress p | param = 1 | param above 1 |
+| type | shape(u) | needs | how it behaves |
 | --- | --- | --- | --- |
-| constant | c | full nudge the whole run | same as 1 |
-| linear | s − p | 1 at the start, 0 at the target | full nudge until p = s − 1, ends at s − 1 |
-| quadratic | (c − p)² | 1 at the start, 0 at the target, drops fastest early | full nudge until p = c − 1, ends at (c − 1)². 2 or more is the same as constant 1 |
+| constant | 1 | nothing, ignores hold and end | full nudge the whole run |
+| linear | 1 − u | | steady decrease |
+| quadratic | (1 − u)² | | drops fast right after hold, flattens near the end |
+| power | (1 − u)^exponent | exponent | 1 is linear, 2 is quadratic, below 1 stays big longer then drops late |
+| exponential | (e^(−rate·u) − e^(−rate)) / (1 − e^(−rate)) | rate | like quadratic with adjustable steepness, higher drops faster. Around 3 to 5 is typical |
+| cosine | (1 + cos(π·u)) / 2 | | slow at the start, fastest in the middle, slow at the end |
+| step | 1 − floor(u·steps) / steps | steps | drops in equal jumps and stays flat between them. 1 step is full nudge until the target |
 
-The default, quadratic 1.45, keeps the full nudge until 45% progress and ends at about 20% of it. Params below 1 are
-allowed but odd: linear hits 0 at p = s, and quadratic dips to 0 at p = c then grows again.
+Defaults: leave out nudge_func and it's quadratic with hold 0.45 and end 0.2, which keeps the full nudge until 45%
+progress and ends at 20% of it. Give a type and hold and end default to 0 instead, so the schedule decays from the
+first generation all the way down, unless you set them.
 
 ---
 
@@ -132,7 +146,7 @@ last real improvement by more than epsilon.
   "bounds": [[-5.12, 5.12], [-5.12, 5.12]],
   "fraction": 0.05,
   "min_nudge": 0.0005,
-  "nudge_func": { "type": "quadratic", "params": [1.45] },
+  "nudge_func": { "type": "quadratic", "hold": 0.45, "end": 0.2 },
   "run_settings": { "target_fitness": 0.99, "max_cycles": 500, "population_size": 60 },
   "workers": 10,
   "selection": { "pressure": 0.45, "elite": 1 },
