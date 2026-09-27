@@ -22,8 +22,8 @@ type Simulation struct {
 	output                 config.Output
 }
 
-func NewSimulation(cfg config.JsonParams) (*Simulation, error) {
-	r := rand.New(rand.NewSource(*cfg.SimSettings.RandSeed))
+func NewSimulation(cfg config.Config) (*Simulation, error) {
+	r := rand.New(rand.NewSource(cfg.SimSettings.RandSeed))
 	opt, err := optimizers.New(cfg, r)
 	if err != nil {
 		return &Simulation{}, err
@@ -32,7 +32,7 @@ func NewSimulation(cfg config.JsonParams) (*Simulation, error) {
 	if err != nil {
 		return &Simulation{}, err
 	}
-	fmt.Printf("using random seed: %d\n", *cfg.SimSettings.RandSeed)
+	fmt.Printf("using random seed: %d\n", cfg.SimSettings.RandSeed)
 	return &Simulation{
 		opt:           opt,
 		pool:          pool,

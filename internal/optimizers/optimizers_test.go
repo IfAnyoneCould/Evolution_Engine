@@ -13,12 +13,12 @@ var _ Optimizer = (*GA)(nil)
 
 func ptr[T any](v T) *T { return &v }
 
-func testConfig(dims int, agents int) config.JsonParams {
+func testConfig(dims int, agents int) config.Config {
 	bounds := make([][2]float64, dims)
 	for i := range bounds {
 		bounds[i] = [2]float64{-5, 5}
 	}
-	return config.JsonParams{
+	return config.Config{
 		Bounds: bounds,
 		Mutation: config.Mutation{
 			Distribution: "uniform",
@@ -31,7 +31,7 @@ func testConfig(dims int, agents int) config.JsonParams {
 	}
 }
 
-func newTestGA(t *testing.T, cfg config.JsonParams, seed int64) *GA {
+func newTestGA(t *testing.T, cfg config.Config, seed int64) *GA {
 	t.Helper()
 	g, err := NewGA(cfg, rand.New(rand.NewSource(seed)))
 	if err != nil {
@@ -162,12 +162,12 @@ func TestNewGADistribution(t *testing.T) {
 func TestNewGABadConfig(t *testing.T) {
 	tests := []struct {
 		name   string
-		change func(*config.JsonParams)
+		change func(*config.Config)
 	}{
-		{"unknown schedule", func(c *config.JsonParams) { c.Mutation.Schedule.Type = ptr("sawtooth") }},
-		{"unknown distribution", func(c *config.JsonParams) { c.Mutation.Distribution = "cauchy" }},
-		{"no distribution", func(c *config.JsonParams) { c.Mutation.Distribution = "" }},
-		{"lower above upper", func(c *config.JsonParams) { c.Bounds[0] = [2]float64{1, -1} }},
+		{"unknown schedule", func(c *config.Config) { c.Mutation.Schedule.Type = ptr("sawtooth") }},
+		{"unknown distribution", func(c *config.Config) { c.Mutation.Distribution = "cauchy" }},
+		{"no distribution", func(c *config.Config) { c.Mutation.Distribution = "" }},
+		{"lower above upper", func(c *config.Config) { c.Bounds[0] = [2]float64{1, -1} }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -491,8 +491,8 @@ func TestSameSeedSameRun(t *testing.T) {
 
 var _ Optimizer = (*CMAES)(nil)
 
-func cmaConfig(bounds ...[2]float64) config.JsonParams {
-	return config.JsonParams{Bounds: bounds, Optimizer: "cmaes"}
+func cmaConfig(bounds ...[2]float64) config.Config {
+	return config.Config{Bounds: bounds, Optimizer: "cmaes"}
 }
 
 func uniformBounds(n int, lo, hi float64) [][2]float64 {
@@ -503,7 +503,7 @@ func uniformBounds(n int, lo, hi float64) [][2]float64 {
 	return b
 }
 
-func newTestCMA(t *testing.T, cfg config.JsonParams, seed int64) *CMAES {
+func newTestCMA(t *testing.T, cfg config.Config, seed int64) *CMAES {
 	t.Helper()
 	c, err := NewCMAES(cfg, rand.New(rand.NewSource(seed)))
 	if err != nil {

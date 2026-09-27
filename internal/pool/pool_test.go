@@ -29,8 +29,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func testConfig(mode string, workers int) config.JsonParams {
-	return config.JsonParams{
+func testConfig(mode string, workers int) config.Config {
+	return config.Config{
 		Prog:        config.Program{Path: simBin, Args: []string{mode}},
 		Workers:     uint(workers),
 		SimSettings: config.SimSettings{Timeout: 5000},

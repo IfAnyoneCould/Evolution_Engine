@@ -39,7 +39,7 @@ type GA struct {
 	r            *rand.Rand
 }
 
-func New(cfg config.JsonParams, r *rand.Rand) (Optimizer, error) {
+func New(cfg config.Config, r *rand.Rand) (Optimizer, error) {
 	switch strings.ToLower(cfg.Optimizer) {
 	case "ga":
 		return NewGA(cfg, r)
@@ -50,9 +50,9 @@ func New(cfg config.JsonParams, r *rand.Rand) (Optimizer, error) {
 	}
 }
 
-func NewGA(params config.JsonParams, r *rand.Rand) (*GA, error) {
+func NewGA(params config.Config, r *rand.Rand) (*GA, error) {
 	var agents []population.Agent
-	for range *params.RunSettings.PopulationSize {
+	for range params.RunSettings.PopulationSize {
 		a, err := population.NewAgent(params.Bounds, r)
 		if err != nil {
 			return &GA{}, err
@@ -61,7 +61,7 @@ func NewGA(params config.JsonParams, r *rand.Rand) (*GA, error) {
 	}
 
 	var nudgeFunc nudge.Function
-	switch strings.ToLower(*params.Mutation.Schedule.Type) {
+	switch strings.ToLower(params.Mutation.Schedule.Type) {
 	case "constant":
 		nudgeFunc = nudge.NewConstantFunction()
 	case "linear":
@@ -69,13 +69,13 @@ func NewGA(params config.JsonParams, r *rand.Rand) (*GA, error) {
 	case "quadratic":
 		nudgeFunc = nudge.NewQuadraticFunction()
 	case "power":
-		nudgeFunc = nudge.NewPowerFunction(*params.Mutation.Schedule.Exponent)
+		nudgeFunc = nudge.NewPowerFunction(params.Mutation.Schedule.Exponent)
 	case "exponential":
-		nudgeFunc = nudge.NewExponentialFunction(*params.Mutation.Schedule.Rate)
+		nudgeFunc = nudge.NewExponentialFunction(params.Mutation.Schedule.Rate)
 	case "cosine":
 		nudgeFunc = nudge.NewCosineFunction()
 	case "step":
-		nudgeFunc = nudge.NewStepFunction(*params.Mutation.Schedule.Steps)
+		nudgeFunc = nudge.NewStepFunction(params.Mutation.Schedule.Steps)
 	default:
 		return &GA{}, errors.New("config error: mutation.schedule.type not recognized")
 	}
@@ -93,7 +93,7 @@ func NewGA(params config.JsonParams, r *rand.Rand) (*GA, error) {
 	return &GA{
 		Agents:       agents,
 		pending:      []int{},
-		sel:          *params.Selection,
+		sel:          params.Selection,
 		schedule:     params.Mutation.Schedule,
 		scheduleFunc: nudgeFunc,
 		dist:         d,
@@ -178,8 +178,8 @@ func (g *GA) CalcNudge(fit float64) float64 {
 		progress = 1
 	}
 
-	u := nudge.Clamp((progress-*g.schedule.Hold)/(1-*g.schedule.Hold), 0, 1)
-	f := *g.schedule.End + (1-*g.schedule.End)*g.scheduleFunc.Get(u)
+	u := nudge.Clamp((progress-g.schedule.Hold)/(1-g.schedule.Hold), 0, 1)
+	f := g.schedule.End + (1-g.schedule.End)*g.scheduleFunc.Get(u)
 	return max(f*g.Fraction, g.MinNudge)
 }
 
@@ -227,7 +227,7 @@ type CMAES struct {
 	r      *rand.Rand
 }
 
-func NewCMAES(cfg config.JsonParams, r *rand.Rand) (*CMAES, error) {
+func NewCMAES(cfg config.Config, r *rand.Rand) (*CMAES, error) {
 	var free []int
 	for i, b := range cfg.Bounds {
 		if b[1] > b[0] {

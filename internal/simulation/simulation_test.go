@@ -33,12 +33,12 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func testConfig(mode string, target float64, cycles int, agents int) config.JsonParams {
+func testConfig(mode string, target float64, cycles int, agents int) config.Config {
 	bounds := make([][2]float64, 3)
 	for i := range bounds {
 		bounds[i] = [2]float64{-5, 5}
 	}
-	return config.JsonParams{
+	return config.Config{
 		Prog:   config.Program{Path: simBin, Args: []string{mode}},
 		Bounds: bounds,
 		Mutation: config.Mutation{
@@ -56,7 +56,7 @@ func testConfig(mode string, target float64, cycles int, agents int) config.Json
 	}
 }
 
-func newTestSim(t *testing.T, cfg config.JsonParams) *Simulation {
+func newTestSim(t *testing.T, cfg config.Config) *Simulation {
 	t.Helper()
 	s, err := NewSimulation(cfg)
 	if err != nil {

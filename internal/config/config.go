@@ -96,18 +96,18 @@ type Program struct {
 }
 
 type Schedule struct {
-	Type     *string  `json:"type"`
-	Hold     *float64 `json:"hold"`
-	End      *float64 `json:"end"`
-	Exponent *float64 `json:"exponent"`
-	Rate     *float64 `json:"rate"`
-	Steps    *uint    `json:"steps"`
+	Type     string  `json:"type"`
+	Hold     float64 `json:"hold"`
+	End      float64 `json:"end"`
+	Exponent float64 `json:"exponent"`
+	Rate     float64 `json:"rate"`
+	Steps    uint    `json:"steps"`
 }
 
 type RunSettings struct {
 	TargetFitness  float64 `json:"target_fitness"`
 	MaxCycles      uint    `json:"max_cycles"`
-	PopulationSize *uint    `json:"population_size"`
+	PopulationSize uint    `json:"population_size"`
 }
 
 type Selection struct {
@@ -122,7 +122,7 @@ type StagnationDetect struct {
 
 type SimSettings struct {
 	Timeout  float64 `json:"timeout_ms"`
-	RandSeed *int64  `json:"rand_seed"`
+	RandSeed int64   `json:"rand_seed"`
 	//TODO add robustness settings later, such as retry count, etc.
 }
 
@@ -141,21 +141,140 @@ type CMAES struct {
 	Sigma float64 `json:"sigma"`
 }
 
-type JsonParams struct {
+type Config struct {
 	Prog             Program          `json:"program"`
 	Bounds           [][2]float64     `json:"bounds"`
-	Mutation         *Mutation         `json:"mutation"`
+	Mutation         Mutation         `json:"mutation"`
 	RunSettings      RunSettings      `json:"run_settings"`
 	Workers          uint             `json:"workers"`
-	Selection        *Selection        `json:"selection"`
+	Selection        Selection        `json:"selection"`
 	StagnationDetect StagnationDetect `json:"stagnation_detection"`
 	SimSettings      SimSettings      `json:"sim_settings"`
 	Output           Output           `json:"output"`
 	Optimizer        string           `json:"optimizer"`
-	CMAES		     *CMAES            `json:"cmaes"`
+	CMAES            CMAES            `json:"cmaes"`
 }
 
-func defaults() JsonParams {
+func (f *fileConfig) check() error {
+	opt := strings.ToLower(or(f.Optimizer, "ga"))
+	switch opt {
+	case "cmaes":
+		if f.Mutation != nil || f.Selection != nil {
+			return errors.New("config error: mutation and selection only apply to the ga")
+		}
+		if f.RunSettings != nil && f.RunSettings.PopulationSize != nil {
+			return errors.New("config error: run_settings.population_size only applies to the ga, cma-es picks its own")
+		}
+	case "ga":
+		if f.CMAES != nil {
+			return errors.New("config error: cmaes section only applies when optimizer is cmaes")
+		}
+		if f.Mutation != nil && f.Mutation.Schedule != nil {
+			if err := f.Mutation.Schedule.check(); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("config error: optimizer %q not recognized", opt)
+	}
+
+	return nil
+}
+
+type fileConfig struct {
+	Prog             Program               `json:"program"`
+	Bounds           [][2]float64          `json:"bounds"`
+	Mutation         *fileMutation         `json:"mutation"`
+	RunSettings      *fileRunSettings      `json:"run_settings"`
+	Workers          *uint                 `json:"workers"`
+	Selection        *fileSelection        `json:"selection"`
+	StagnationDetect *fileStagnationDetect `json:"stagnation_detection"`
+	SimSettings      *fileSimSettings      `json:"sim_settings"`
+	Output           *fileOutput           `json:"output"`
+	Optimizer        *string               `json:"optimizer"`
+	CMAES            *fileCMAES            `json:"cmaes"`
+}
+
+type fileSchedule struct {
+	Type     *string  `json:"type"`
+	Hold     *float64 `json:"hold"`
+	End      *float64 `json:"end"`
+	Exponent *float64 `json:"exponent"`
+	Rate     *float64 `json:"rate"`
+	Steps    *uint    `json:"steps"`
+}
+
+func (s *fileSchedule) check() error {
+	switch strings.ToLower(or(s.Type, "quadratic")) {
+	case "exponential":
+		if s.Rate == nil {
+			return errors.New("config error: if mutation.schedule.type is 'exponential', then mutation.schedule.rate is required")
+		}
+		if s.Exponent != nil || s.Steps != nil {
+			return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as exponential")
+		}
+	case "step":
+		if s.Steps == nil {
+			return errors.New("config error: if mutation.schedule.type is 'step', then mutation.schedule.steps is required")
+		}
+		if s.Rate != nil || s.Exponent != nil {
+			return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as step")
+		}
+	case "power":
+		if s.Exponent == nil {
+			return errors.New("config error: if mutation.schedule.type is 'power', then mutation.schedule.exponent is required")
+		}
+		if s.Rate != nil || s.Steps != nil {
+			return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as power")
+		}
+	default:
+		{
+			if s.Rate != nil || s.Exponent != nil || s.Steps != nil {
+				return fmt.Errorf("config error: mismatched mutation.schedule fields with mutation.schedule.type as %s", s.Type)
+			}
+		}
+	}
+	return nil
+}
+
+type fileRunSettings struct {
+	TargetFitness  *float64 `json:"target_fitness"`
+	MaxCycles      *uint    `json:"max_cycles"`
+	PopulationSize *uint    `json:"population_size"`
+}
+
+type fileSelection struct {
+	Pressure *float64 `json:"pressure"`
+	Elite    *uint    `json:"elite"`
+}
+
+type fileStagnationDetect struct {
+	Patience *uint    `json:"patience"`
+	Epsilon  *float64 `json:"epsilon"`
+}
+
+type fileSimSettings struct {
+	Timeout  *float64 `json:"timeout_ms"`
+	RandSeed *int64   `json:"rand_seed"`
+	//TODO add robustness settings later, such as retry count, etc.
+}
+
+type fileOutput struct {
+	WeightPath *string `json:"weight_path"`
+	//TODO add history control and pathing
+}
+type fileMutation struct {
+	Distribution *string       `json:"distribution"`
+	Fraction     *float64      `json:"fraction"`
+	MinNudge     *float64      `json:"min_nudge"`
+	Schedule     *fileSchedule `json:"schedule"`
+}
+
+type fileCMAES struct {
+	Sigma *float64 `json:"sigma"`
+}
+
+func defaults() Config {
 	prog := Program{
 		Path: "",
 		Args: []string{},
@@ -171,7 +290,7 @@ func defaults() JsonParams {
 	runSettings := RunSettings{
 		TargetFitness:  0.99,
 		MaxCycles:      500,
-		PopulationSize: &defPopSize,
+		PopulationSize: defPopSize,
 	}
 	selection := Selection{
 		Pressure: 0.45,
@@ -188,22 +307,109 @@ func defaults() JsonParams {
 		WeightPath: "",
 	}
 
-	return JsonParams{
+	return Config{
 		Prog:             prog,
 		Bounds:           nil,
-		Mutation:         &mutation,
+		Mutation:         mutation,
 		RunSettings:      runSettings,
 		Workers:          10,
-		Selection:        &selection,
+		Selection:        selection,
 		StagnationDetect: stagnant,
 		SimSettings:      simSettings,
 		Output:           output,
 		Optimizer:        "GA",
 	}
-
 }
 
-func (p JsonParams) validate() error { // TODO add checks that error when cmaes is used and unnecessary fields are filled in
+func (f *fileConfig) resolve() Config {
+	rs := f.RunSettings
+	if rs == nil {
+		rs = &fileRunSettings{}
+	}
+	m := f.Mutation
+	if m == nil {
+		m = &fileMutation{}
+	}
+	sel := f.Selection
+	if sel == nil {
+		sel = &fileSelection{}
+	}
+	st := f.StagnationDetect
+	if st == nil {
+		st = &fileStagnationDetect{}
+	}
+	sim := f.SimSettings
+	if sim == nil {
+		sim = &fileSimSettings{}
+	}
+	out := f.Output
+	if out == nil {
+		out = &fileOutput{}
+	}
+	cm := f.CMAES
+	if cm == nil {
+		cm = &fileCMAES{}
+	}
+
+	d := defaults()
+
+	cfg := Config{
+		Prog:   f.Prog,
+		Bounds: f.Bounds,
+		Mutation: Mutation{
+			Distribution: strings.ToLower(or(m.Distribution, d.Mutation.Distribution)),
+			Fraction:     or(m.Fraction, d.Mutation.Fraction),
+			MinNudge:     or(m.MinNudge, d.Mutation.MinNudge),
+			Schedule:     resolveSchedule(m.Schedule),
+		},
+		RunSettings: RunSettings{
+			TargetFitness:  or(rs.TargetFitness, d.RunSettings.TargetFitness),
+			MaxCycles:      or(rs.MaxCycles, d.RunSettings.MaxCycles),
+			PopulationSize: or(rs.PopulationSize, d.RunSettings.PopulationSize),
+		},
+		Workers: or(f.Workers, d.Workers),
+		Selection: Selection{
+			Pressure: or(sel.Pressure, d.Selection.Pressure),
+			Elite:    or(sel.Elite, d.Selection.Elite),
+		},
+		StagnationDetect: StagnationDetect{
+			Patience: or(st.Patience, d.StagnationDetect.Patience),
+			Epsilon:  or(st.Epsilon, d.StagnationDetect.Epsilon),
+		},
+		SimSettings: SimSettings{
+			Timeout:  or(sim.Timeout, d.SimSettings.Timeout),
+			RandSeed: or(sim.RandSeed, d.SimSettings.RandSeed),
+		},
+		Output: Output{
+			WeightPath: or(out.WeightPath, d.Output.WeightPath),
+		},
+		Optimizer: or(f.Optimizer, d.Optimizer),
+		CMAES: CMAES{
+			Sigma: or(cm.Sigma, d.CMAES.Sigma),
+		},
+	}
+	return cfg
+}
+
+func resolveSchedule(s *fileSchedule) Schedule {
+	if s == nil {
+		return Schedule{Type: "quadratic", Hold: 0.45, End: 0.2}
+	}
+	hold, end := 0.0, 0.2
+	if s.Type == nil {
+		hold, end = 0.45, 0.2
+	}
+	return Schedule{
+		Type:     strings.ToLower(or(s.Type, "quadratic")),
+		Hold:     or(s.Hold, hold),
+		End:      or(s.End, end),
+		Exponent: or(s.Exponent, 0),
+		Rate:     or(s.Rate, 0),
+		Steps:    or(s.Steps, 0),
+	}
+}
+
+func (p Config) validate() error { // TODO add checks that error when cmaes is used and unnecessary fields are filled in
 	if p.Prog.Path == "" {
 		return errors.New("config error: program.path required")
 	}
@@ -212,18 +418,6 @@ func (p JsonParams) validate() error { // TODO add checks that error when cmaes 
 	}
 	if p.Workers <= 0 {
 		return errors.New("config error: worker count needs to be above 0")
-	}
-	if !slices.Contains([]string{"ga","cmaes"}, strings.ToLower(p.Optimizer)) {
-		return errors.New("config error: optimizer not recognized")
-	}
-	if *p.RunSettings.PopulationSize <= 0 {
-		return errors.New("config error: run_settings.population_size needs to be greater than 0")
-	}
-	if *p.RunSettings.PopulationSize <= p.Selection.Elite {
-		return errors.New("config error: selection.elite cannot be greater than or equal to run_settings.population_size")
-	}
-	if p.Selection.Pressure <= 0 || p.Selection.Pressure > 1 {
-		return errors.New("config error: invalid range for selection.pressure, must be within (0,1]")
 	}
 	if p.RunSettings.TargetFitness <= 0 || p.RunSettings.TargetFitness > 1 {
 		return errors.New("config error: run_settings.target_fitness outside of bounds (0,1]")
@@ -237,114 +431,86 @@ func (p JsonParams) validate() error { // TODO add checks that error when cmaes 
 	if p.SimSettings.Timeout <= 0 {
 		return errors.New("config error: sim_settings.timeout must be greater than 0")
 	}
-	if float64(*p.RunSettings.PopulationSize)*p.Selection.Pressure < 1 {
-		return errors.New("config error: run_settings.population_size * selection.pressure cannot be less than 1")
-	}
-	if p.Mutation.Schedule.Type != nil {
-		if !slices.Contains([]string{"constant", "quadratic", "linear", "power", "exponential", "cosine", "step"}, strings.ToLower(*p.Mutation.Schedule.Type)) {
+	if p.Optimizer == "ga" {
+		if p.RunSettings.PopulationSize <= 0 {
+			return errors.New("config error: run_settings.population_size needs to be greater than 0")
+		}
+		if p.RunSettings.PopulationSize <= p.Selection.Elite {
+			return errors.New("config error: selection.elite cannot be greater than or equal to run_settings.population_size")
+		}
+		if p.Selection.Pressure <= 0 || p.Selection.Pressure > 1 {
+			return errors.New("config error: invalid range for selection.pressure, must be within (0,1]")
+		}
+		if float64(p.RunSettings.PopulationSize)*p.Selection.Pressure < 1 {
+			return errors.New("config error: run_settings.population_size * selection.pressure cannot be less than 1")
+		}
+		if !slices.Contains([]string{"constant", "quadratic", "linear", "power", "exponential", "cosine", "step"}, strings.ToLower(p.Mutation.Schedule.Type)) {
 			return errors.New("config error: mutation.schedule.type not recognized")
 		}
-		switch strings.ToLower(*p.Mutation.Schedule.Type) {
+		switch strings.ToLower(p.Mutation.Schedule.Type) {
 		case "exponential":
 			{
-				if p.Mutation.Schedule.Rate == nil {
-					return errors.New("config error: if mutation.schedule.type is 'exponential', then mutation.schedule.rate is required")
-				}
-				if *p.Mutation.Schedule.Rate <= 0 {
+				if p.Mutation.Schedule.Rate <= 0 {
 					return errors.New("config error: mutation.schedule.rate must be greater than 0")
-				}
-				if p.Mutation.Schedule.Exponent != nil || p.Mutation.Schedule.Steps != nil {
-					return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as exponential")
 				}
 			}
 		case "step":
 			{
-				if p.Mutation.Schedule.Steps == nil {
-					return errors.New("config error: if mutation.schedule.type is 'step', then mutation.schedule.steps is required")
-				}
-				if *p.Mutation.Schedule.Steps < 1 {
+				if p.Mutation.Schedule.Steps < 1 {
 					return errors.New("config error: mutation.schedule.steps must be greater than 0")
-				}
-				if p.Mutation.Schedule.Rate != nil || p.Mutation.Schedule.Exponent != nil {
-					return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as step")
 				}
 			}
 		case "power":
 			{
-				if p.Mutation.Schedule.Exponent == nil {
-					return errors.New("config error: if mutation.schedule.type is 'power', then mutation.schedule.exponent is required")
-				}
-				if *p.Mutation.Schedule.Exponent <= 0 {
+				if p.Mutation.Schedule.Exponent <= 0 {
 					return errors.New("config error: mutation.schedule.exponent must be greater than 0")
-				}
-				if p.Mutation.Schedule.Rate != nil || p.Mutation.Schedule.Steps != nil {
-					return errors.New("config error: mismatched mutation.schedule fields with mutation.schedule.type as power")
-				}
-			}
-		default:
-			{
-				if p.Mutation.Schedule.Rate != nil || p.Mutation.Schedule.Exponent != nil || p.Mutation.Schedule.Steps != nil {
-					return fmt.Errorf("config error: mismatched mutation.schedule fields with mutation.schedule.type as %s", *p.Mutation.Schedule.Type)
 				}
 			}
 		}
+		if p.Mutation.Schedule.End < 0 || p.Mutation.Schedule.End > 1 {
+			return errors.New("config error: mutation.schedule.end must be in range [0,1]")
+		}
+		if p.Mutation.Schedule.Hold < 0 || p.Mutation.Schedule.Hold > 1 {
+			return errors.New("config error: mutation.schedule.hold must be in range [0,1]")
+		}
+		if !slices.Contains([]string{"uniform", "gaussian"}, strings.ToLower(p.Mutation.Distribution)) {
+			return errors.New("config error: mutation.distribution not recognized")
+		}
 	}
-	if p.Mutation.Schedule.End != nil && (*p.Mutation.Schedule.End < 0 || *p.Mutation.Schedule.End > 1) {
-		return errors.New("config error: mutation.schedule.end must be in range [0,1]")
-	}
-	if p.Mutation.Schedule.Hold != nil && (*p.Mutation.Schedule.Hold < 0 || *p.Mutation.Schedule.Hold > 1) {
-		return errors.New("config error: mutation.schedule.hold must be in range [0,1]")
-	}
-	if !slices.Contains([]string{"uniform", "gaussian"}, strings.ToLower(p.Mutation.Distribution)) {
-		return errors.New("config error: mutation.distribution not recognized")
+	if p.Optimizer == "cmaes" {
+		if p.CMAES.Sigma <= 0 {
+			return errors.New("config error: cmaes.sigma must be greater than 0")
+		}
 	}
 	return nil
 }
 
-func Load(path string) (JsonParams, error) {
+func Load(path string) (Config, error) {
 
 	file, err := os.ReadFile(path)
 	if err != nil {
-		return JsonParams{}, err
+		return Config{}, err
 	}
 
-	cfg := defaults()
-
+	var f fileConfig
 	dec := json.NewDecoder(bytes.NewReader(file))
 	dec.DisallowUnknownFields()
-
-	// TODO if cmaes is set, set unnecessary fields to nil, plus adding the cmaes fields like sigma
-
-	if err = dec.Decode(&cfg); err != nil {
-		return JsonParams{}, err
+	if err = dec.Decode(&f); err != nil {
+		return Config{}, err
 	}
-
-	if cfg.Mutation.Schedule.Type == nil {
-		t := "quadratic"
-		h := 0.45
-		e := 0.2
-		cfg.Mutation.Schedule.Type = &t
-		cfg.Mutation.Schedule.Hold = &h
-		cfg.Mutation.Schedule.End = &e
-	} else {
-		if cfg.Mutation.Schedule.Hold == nil {
-			h := float64(0)
-			cfg.Mutation.Schedule.Hold = &h
-		}
-		if cfg.Mutation.Schedule.End == nil {
-			e := float64(0)
-			cfg.Mutation.Schedule.End = &e
-		}
+	if err := f.check(); err != nil {
+		return Config{}, err
 	}
-
-	if err = cfg.validate(); err != nil {
-		return JsonParams{}, err
+	cfg := f.resolve()
+	if err := cfg.validate(); err != nil {
+		return Config{}, err
 	}
-
-	if cfg.SimSettings.RandSeed == nil {
-		s := time.Now().UnixMicro()
-		cfg.SimSettings.RandSeed = &s
-	}
-
 	return cfg, nil
+}
+
+func or[T any](p *T, def T) T {
+	if p != nil {
+		return *p
+	}
+	return def
 }

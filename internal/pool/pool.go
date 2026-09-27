@@ -11,7 +11,7 @@ type Pool struct {
 	procs []*config.SimProcess
 }
 
-func NewPool(cfg config.JsonParams) (*Pool, error) {
+func NewPool(cfg config.Config) (*Pool, error) {
 	procs := make([]*config.SimProcess, 0, cfg.Workers)
 	for range cfg.Workers {
 		sim, err := config.NewSimProcess(cfg.Prog.Path, cfg.Prog.Args, cfg.SimSettings.Timeout)
