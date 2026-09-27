@@ -52,6 +52,7 @@ func testConfig(mode string, target float64, cycles int, agents int) config.Json
 		Selection:        config.Selection{Pressure: 0.45, Elite: 2},
 		StagnationDetect: config.StagnationDetect{Patience: 1000, Epsilon: 0.01},
 		SimSettings:      config.SimSettings{Timeout: 5000, RandSeed: ptr(int64(1))},
+		Optimizer:        "ga",
 	}
 }
 
@@ -250,5 +251,28 @@ func TestSameSeedSameRun(t *testing.T) {
 	}
 	if c := run(8); slices.Equal(a, c) {
 		t.Errorf("different seeds gave the same run: %v", a)
+	}
+}
+
+func TestRunWithCMAES(t *testing.T) {
+	cfg := testConfig("sum", 14.5, 200, 20)
+	cfg.Optimizer = "cmaes"
+	s := newTestSim(t, cfg)
+	if _, ok := s.opt.(*optimizers.CMAES); !ok {
+		t.Fatalf("expected cma-es as the optimizer, got %T", s.opt)
+	}
+	if err := runQuiet(t, s); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	w, f := s.GetBestWeights()
+	if f < 14.5 {
+		t.Errorf("cma-es should reach the target of 14.5 out of 15, got %f", f)
+	}
+	if s.currentCycle >= 200 {
+		t.Errorf("run used every cycle instead of stopping at the target")
+	}
+	if math.Abs(sum(w)-f) > 1e-9 {
+		t.Errorf("best weights don't belong to the best fitness: they sum to %f, fitness %f", sum(w), f)
 	}
 }

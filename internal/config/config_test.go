@@ -286,6 +286,10 @@ func TestLoadValidation(t *testing.T) {
 		{"distribution in caps", `,"mutation":{"distribution":"GAUSSIAN"}`, false},
 		{"unknown distribution", `,"mutation":{"distribution":"cauchy"}`, true},
 		{"empty distribution", `,"mutation":{"distribution":""}`, true},
+		{"optimizer ga", `,"optimizer":"ga"`, false},
+		{"optimizer cmaes", `,"optimizer":"cmaes"`, false},
+		{"optimizer in caps", `,"optimizer":"CMAES"`, false},
+		{"unknown optimizer", `,"optimizer":"pso"`, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
@@ -308,7 +312,7 @@ func TestLoadPartialSection(t *testing.T) {
 	if cfg.RunSettings.MaxCycles != 10 {
 		t.Errorf("incorrect max cycles: wanted %d, got %d", 10, cfg.RunSettings.MaxCycles)
 	}
-	if cfg.RunSettings.PopulationSize != 60 {
+	if *cfg.RunSettings.PopulationSize != 60 {
 		t.Errorf("setting one field wiped the default population size: got %d", cfg.RunSettings.PopulationSize)
 	}
 	if cfg.RunSettings.TargetFitness != 0.99 {
@@ -361,6 +365,7 @@ func TestLoadAllSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	popSize := uint(30)
 	want := struct {
 		Workers    uint
 		Run        RunSettings
@@ -368,7 +373,7 @@ func TestLoadAllSettings(t *testing.T) {
 		Stagnation StagnationDetect
 		Timeout    float64
 		WeightPath string
-	}{3, RunSettings{0.5, 7, 30}, Selection{0.3, 4}, StagnationDetect{12, 0.002}, 250, "out.json"}
+	}{3, RunSettings{0.5, 7, &popSize}, Selection{0.3, 4}, StagnationDetect{12, 0.002}, 250, "out.json"}
 
 	if cfg.Workers != want.Workers {
 		t.Errorf("incorrect workers: wanted %d, got %d", want.Workers, cfg.Workers)
@@ -376,7 +381,7 @@ func TestLoadAllSettings(t *testing.T) {
 	if cfg.RunSettings != want.Run {
 		t.Errorf("incorrect run settings: wanted %+v, got %+v", want.Run, cfg.RunSettings)
 	}
-	if cfg.Selection != want.Selection {
+	if *cfg.Selection != want.Selection {
 		t.Errorf("incorrect selection: wanted %+v, got %+v", want.Selection, cfg.Selection)
 	}
 	if cfg.StagnationDetect != want.Stagnation {

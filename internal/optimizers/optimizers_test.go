@@ -488,3 +488,358 @@ func TestSameSeedSameRun(t *testing.T) {
 		t.Errorf("different seeds gave the same run: %v", a)
 	}
 }
+
+var _ Optimizer = (*CMAES)(nil)
+
+func cmaConfig(bounds ...[2]float64) config.JsonParams {
+	return config.JsonParams{Bounds: bounds, Optimizer: "cmaes"}
+}
+
+func uniformBounds(n int, lo, hi float64) [][2]float64 {
+	b := make([][2]float64, n)
+	for i := range b {
+		b[i] = [2]float64{lo, hi}
+	}
+	return b
+}
+
+func newTestCMA(t *testing.T, cfg config.JsonParams, seed int64) *CMAES {
+	t.Helper()
+	c, err := NewCMAES(cfg, rand.New(rand.NewSource(seed)))
+	if err != nil {
+		t.Fatalf("could not build cma-es: %v", err)
+	}
+	return c
+}
+
+// runs gens generations maximising f, returns how many generations it took to reach target (or gens)
+func runCMA(t *testing.T, c *CMAES, f func([]float64) float64, gens int, target float64) int {
+	t.Helper()
+	for g := 0; g < gens; g++ {
+		xs, err := c.Ask()
+		if err != nil {
+			t.Fatalf("ask failed: %v", err)
+		}
+		fit := make([]float64, len(xs))
+		for i, x := range xs {
+			fit[i] = f(x)
+		}
+		if err := c.Tell(fit); err != nil {
+			t.Fatalf("tell failed: %v", err)
+		}
+		if _, best := c.Best(); best >= target {
+			return g + 1
+		}
+	}
+	return gens
+}
+
+func TestNewCMAESConstants(t *testing.T) {
+	c := newTestCMA(t, cmaConfig(uniformBounds(10, -1, 1)...), 1)
+	if c.n != 10 || c.y != 10 || c.u != 5 {
+		t.Errorf("wrong sizes for n=10: expected n 10, lambda 10, mu 5, got %d, %d, %d", c.n, c.y, c.u)
+	}
+	sum := 0.0
+	for i, w := range c.wI {
+		sum += w
+		if i > 0 && w >= c.wI[i-1] {
+			t.Errorf("weights should decrease, %d is %f after %f", i, w, c.wI[i-1])
+		}
+	}
+	if math.Abs(sum-1) > 1e-12 {
+		t.Errorf("weights should sum to 1, got %f", sum)
+	}
+	if math.Abs(c.uEff-3.1672) > 1e-3 {
+		t.Errorf("incorrect mu_eff: expected about 3.1672, got %f", c.uEff)
+	}
+	if c.o != 0.3 {
+		t.Errorf("incorrect starting sigma: expected 0.3, got %f", c.o)
+	}
+	for j := range c.n {
+		if c.m.AtVec(j) != 0.5 {
+			t.Errorf("mean should start in the middle of every range, dim %d is %f", j, c.m.AtVec(j))
+		}
+	}
+}
+
+func TestNewCMAESSkipsFixedWeights(t *testing.T) {
+	c := newTestCMA(t, cmaConfig([2]float64{-1, 1}, [2]float64{5, 5}, [2]float64{0, 10}), 1)
+	if c.n != 2 || !slices.Equal(c.free, []int{0, 2}) {
+		t.Errorf("only free weights should be dimensions: expected n 2 on [0 2], got n %d on %v", c.n, c.free)
+	}
+}
+
+func TestNewCMAESAllFixed(t *testing.T) {
+	if _, err := NewCMAES(cmaConfig([2]float64{5, 5}, [2]float64{1, 1}), rand.New(rand.NewSource(1))); err == nil {
+		t.Errorf("expected an error when every weight is fixed")
+	}
+}
+
+func TestCMAESAsk(t *testing.T) {
+	bounds := [][2]float64{{-1, 1}, {0, 10}, {-100, -50}, {5, 5}}
+	c := newTestCMA(t, cmaConfig(bounds...), 1)
+	for g := range 20 {
+		xs, err := c.Ask()
+		if err != nil {
+			t.Fatalf("ask failed: %v", err)
+		}
+		if len(xs) != c.y {
+			t.Fatalf("ask should hand out lambda samples: expected %d, got %d", c.y, len(xs))
+		}
+		for _, x := range xs {
+			if len(x) != len(bounds) {
+				t.Fatalf("sample has %d weights, bounds have %d", len(x), len(bounds))
+			}
+			for i, w := range x {
+				if w < bounds[i][0] || w > bounds[i][1] {
+					t.Fatalf("generation %d: weight %d is %f, outside [%f, %f]", g, i, w, bounds[i][0], bounds[i][1])
+				}
+			}
+			if x[3] != 5 {
+				t.Fatalf("fixed weight moved to %f", x[3])
+			}
+		}
+		fit := make([]float64, len(xs))
+		for i, x := range xs {
+			fit[i] = -x[0] * x[0]
+		}
+		if err := c.Tell(fit); err != nil {
+			t.Fatalf("tell failed: %v", err)
+		}
+	}
+}
+
+func TestCMAESAskTwiceGivesTheSameSamples(t *testing.T) {
+	c := newTestCMA(t, cmaConfig(uniformBounds(3, -1, 1)...), 1)
+	a, _ := c.Ask()
+	b, _ := c.Ask()
+	for i := range a {
+		if !slices.Equal(a[i], b[i]) {
+			t.Fatalf("asking again before telling should give the same generation, sample %d changed", i)
+		}
+	}
+}
+
+func TestCMAESAskHandsOutCopies(t *testing.T) {
+	c := newTestCMA(t, cmaConfig(uniformBounds(3, -1, 1)...), 1)
+	a, _ := c.Ask()
+	a[0][0] = 999
+	if b, _ := c.Ask(); b[0][0] == 999 {
+		t.Errorf("changing an asked sample changed cma-es's copy")
+	}
+}
+
+func TestCMAESTellMisuse(t *testing.T) {
+	c := newTestCMA(t, cmaConfig(uniformBounds(3, -1, 1)...), 1)
+	if err := c.Tell(make([]float64, c.y)); err == nil {
+		t.Errorf("tell before any ask should be an error")
+	}
+	xs, _ := c.Ask()
+	if err := c.Tell(make([]float64, len(xs)-1)); err == nil {
+		t.Errorf("telling the wrong number of fitnesses should be an error")
+	}
+	if err := c.Tell(make([]float64, len(xs))); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := c.Tell(make([]float64, len(xs))); err == nil {
+		t.Errorf("telling twice for one ask should be an error")
+	}
+}
+
+func TestCMAESBest(t *testing.T) {
+	c := newTestCMA(t, cmaConfig(uniformBounds(3, -1, 1)...), 1)
+	if w, f := c.Best(); len(w) != 0 || !math.IsInf(f, -1) {
+		t.Errorf("nothing told yet, best should be empty and -Inf, got %v and %f", w, f)
+	}
+
+	xs, _ := c.Ask()
+	fit := make([]float64, len(xs))
+	fit[3] = 10
+	if err := c.Tell(fit); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	w, f := c.Best()
+	if f != 10 || !slices.Equal(w, xs[3]) {
+		t.Errorf("best should be the sample told 10: got %f with %v, wanted %v", f, w, xs[3])
+	}
+
+	xs, _ = c.Ask()
+	low := make([]float64, len(xs))
+	for i := range low {
+		low[i] = -5
+	}
+	if err := c.Tell(low); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w2, f2 := c.Best(); f2 != 10 || !slices.Equal(w2, w) {
+		t.Errorf("a worse generation replaced the best: got %f", f2)
+	}
+
+	w[0] = 999
+	if w3, _ := c.Best(); w3[0] == 999 {
+		t.Errorf("changing the returned best weights changed cma-es's copy")
+	}
+}
+
+func TestReflect01(t *testing.T) {
+	tests := []struct{ in, want float64 }{
+		{0.3, 0.3}, {0, 0}, {1, 1}, {1.2, 0.8}, {-0.3, 0.3}, {2.4, 0.4}, {-1.7, 0.3}, {2, 0}, {3.5, 0.5}, {-2, 0},
+	}
+	for _, tt := range tests {
+		if got := reflect01(tt.in); math.Abs(got-tt.want) > 1e-12 {
+			t.Errorf("reflect01(%f): expected %f, got %f", tt.in, tt.want, got)
+		}
+	}
+	for i := -300; i <= 300; i++ {
+		if v := reflect01(float64(i) / 37); v < 0 || v > 1 {
+			t.Fatalf("reflect01(%f) = %f, outside [0,1]", float64(i)/37, v)
+		}
+	}
+}
+
+func TestCMAESSphere(t *testing.T) {
+	c := newTestCMA(t, cmaConfig(uniformBounds(10, -5, 5)...), 1)
+	sphere := func(x []float64) float64 {
+		s := 0.0
+		for _, v := range x {
+			s += (v - 1.3) * (v - 1.3)
+		}
+		return -s
+	}
+	runCMA(t, c, sphere, 400, math.Inf(1))
+	if _, f := c.Best(); f < -1e-6 {
+		t.Errorf("400 generations on a 10d sphere should get within 1e-6, got %g", f)
+	}
+}
+
+// the case normalizing fixes: one sigma used to be 60 in real units, which kept the small weight on its edges
+func TestCMAESMixedScales(t *testing.T) {
+	c := newTestCMA(t, cmaConfig([2]float64{-1, 1}, [2]float64{-100, 100}), 1)
+	f := func(x []float64) float64 {
+		b := (x[1] - 50) / 100
+		return -(x[0]*x[0] + b*b)
+	}
+	runCMA(t, c, f, 150, math.Inf(1))
+	w, _ := c.Best()
+	if math.Abs(w[0]) > 0.01 || math.Abs(w[1]-50) > 1 {
+		t.Errorf("expected the best near (0, 50), got %v", w)
+	}
+}
+
+// the case folding handles: the best value is right on the upper bound
+func TestCMAESOptimumOnABound(t *testing.T) {
+	c := newTestCMA(t, cmaConfig(uniformBounds(4, -5, 5)...), 1)
+	f := func(x []float64) float64 {
+		s := 0.0
+		for _, v := range x {
+			s += (v - 5) * (v - 5)
+		}
+		return -s
+	}
+	runCMA(t, c, f, 200, math.Inf(1))
+	w, _ := c.Best()
+	for i, v := range w {
+		if v < 4.99 || v > 5 {
+			t.Errorf("weight %d should end on the bound at 5, got %f", i, v)
+		}
+	}
+}
+
+func rotation(n int, r *rand.Rand) [][]float64 {
+	rows := make([][]float64, n)
+	for i := range rows {
+		v := make([]float64, n)
+		for j := range v {
+			v[j] = r.NormFloat64()
+		}
+		for _, u := range rows[:i] {
+			dot := 0.0
+			for j := range v {
+				dot += v[j] * u[j]
+			}
+			for j := range v {
+				v[j] -= dot * u[j]
+			}
+		}
+		norm := 0.0
+		for _, x := range v {
+			norm += x * x
+		}
+		norm = math.Sqrt(norm)
+		for j := range v {
+			v[j] /= norm
+		}
+		rows[i] = v
+	}
+	return rows
+}
+
+// learning C is the point of cma-es: a tilted valley should take about as long as an axis aligned one
+func TestCMAESRotationInvariance(t *testing.T) {
+	n := 5
+	ellipsoid := func(rot [][]float64) func([]float64) float64 {
+		return func(x []float64) float64 {
+			s := 0.0
+			for i := range n {
+				z := x[i]
+				if rot != nil {
+					z = 0
+					for j := range n {
+						z += rot[i][j] * x[j]
+					}
+				}
+				s += math.Pow(1e4, float64(i)/float64(n-1)) * z * z
+			}
+			return -s
+		}
+	}
+	plain := runCMA(t, newTestCMA(t, cmaConfig(uniformBounds(n, -5, 5)...), 1), ellipsoid(nil), 2000, -1e-8)
+	tilted := runCMA(t, newTestCMA(t, cmaConfig(uniformBounds(n, -5, 5)...), 1), ellipsoid(rotation(n, rand.New(rand.NewSource(3)))), 2000, -1e-8)
+	if plain >= 2000 || tilted >= 2000 {
+		t.Fatalf("never reached 1e-8: plain took %d, tilted %d generations", plain, tilted)
+	}
+	if float64(tilted) > 1.5*float64(plain) {
+		t.Errorf("the tilted ellipsoid took %d generations against %d for the plain one, C isn't learning the rotation", tilted, plain)
+	}
+}
+
+func TestCMAESSameSeedSameRun(t *testing.T) {
+	run := func(seed int64) []float64 {
+		c := newTestCMA(t, cmaConfig(uniformBounds(4, -5, 5)...), seed)
+		runCMA(t, c, func(x []float64) float64 { return -x[0]*x[0] - x[1]*x[1] }, 30, math.Inf(1))
+		w, _ := c.Best()
+		return w
+	}
+	a, b := run(7), run(7)
+	if !slices.Equal(a, b) {
+		t.Errorf("same seed gave different runs: %v and %v", a, b)
+	}
+	if c := run(8); slices.Equal(a, c) {
+		t.Errorf("different seeds gave the same run")
+	}
+}
+
+func TestNewPicksTheOptimizer(t *testing.T) {
+	ga := testConfig(3, 10)
+	for _, name := range []string{"ga", "GA"} {
+		ga.Optimizer = name
+		o, err := New(ga, rand.New(rand.NewSource(1)))
+		if _, ok := o.(*GA); err != nil || !ok {
+			t.Errorf("optimizer %q should build the ga, got %T and %v", name, o, err)
+		}
+	}
+	cma := cmaConfig(uniformBounds(3, -1, 1)...)
+	for _, name := range []string{"cmaes", "CMAES"} {
+		cma.Optimizer = name
+		o, err := New(cma, rand.New(rand.NewSource(1)))
+		if _, ok := o.(*CMAES); err != nil || !ok {
+			t.Errorf("optimizer %q should build cma-es, got %T and %v", name, o, err)
+		}
+	}
+	for _, name := range []string{"", "pso"} {
+		cma.Optimizer = name
+		if _, err := New(cma, rand.New(rand.NewSource(1))); err == nil {
+			t.Errorf("optimizer %q should be an error", name)
+		}
+	}
+}
