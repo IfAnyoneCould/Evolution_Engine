@@ -46,16 +46,16 @@ can never fully stop moving. All of it is set from the config.
 ```json
 {
   "program": { "path": "cmd/engine/TestRun.exe", "args": ["8", "0", "5.12"] },
-  "weights": [[-5.12, 5.12], [-5.12, 5.12]]
+  "bounds": [[-5.12, 5.12], [-5.12, 5.12]]
 }
 ```
 
-`weights` has one entry per dimension and sets both the genome length and the
+`bounds` has one entry per dimension and sets both the genome length and the
 legal range of each weight. The bundled example optimises the Rastrigin
 function in 8 dimensions — a standard benchmark chosen because it's covered in
 local minima and will expose an optimiser that converges too early.
 
-Only `program` and `weights` are required, everything else has a tuned default.
+Only `program` and `bounds` are required, everything else has a tuned default.
 Every option is in [config.md](config.md).
 
 ## Running
