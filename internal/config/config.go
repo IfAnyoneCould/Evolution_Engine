@@ -230,7 +230,7 @@ func (s *fileSchedule) check() error {
 	default:
 		{
 			if s.Rate != nil || s.Exponent != nil || s.Steps != nil {
-				return fmt.Errorf("config error: mismatched mutation.schedule fields with mutation.schedule.type as %s", s.Type)
+				return fmt.Errorf("config error: mismatched mutation.schedule fields with mutation.schedule.type as %s", or(s.Type,"quadratic"))
 			}
 		}
 	}
@@ -306,6 +306,9 @@ func defaults() Config {
 	output := Output{
 		WeightPath: "",
 	}
+	cmaes := CMAES{
+		Sigma: 0.3,
+	}
 
 	return Config{
 		Prog:             prog,
@@ -318,6 +321,7 @@ func defaults() Config {
 		SimSettings:      simSettings,
 		Output:           output,
 		Optimizer:        "GA",
+		CMAES: cmaes,
 	}
 }
 
@@ -378,12 +382,12 @@ func (f *fileConfig) resolve() Config {
 		},
 		SimSettings: SimSettings{
 			Timeout:  or(sim.Timeout, d.SimSettings.Timeout),
-			RandSeed: or(sim.RandSeed, d.SimSettings.RandSeed),
+			RandSeed: or(sim.RandSeed, time.Now().UnixMicro()),
 		},
 		Output: Output{
 			WeightPath: or(out.WeightPath, d.Output.WeightPath),
 		},
-		Optimizer: or(f.Optimizer, d.Optimizer),
+		Optimizer: strings.ToLower(or(f.Optimizer, d.Optimizer)),
 		CMAES: CMAES{
 			Sigma: or(cm.Sigma, d.CMAES.Sigma),
 		},
@@ -395,7 +399,7 @@ func resolveSchedule(s *fileSchedule) Schedule {
 	if s == nil {
 		return Schedule{Type: "quadratic", Hold: 0.45, End: 0.2}
 	}
-	hold, end := 0.0, 0.2
+	hold, end := 0.0, 0.0
 	if s.Type == nil {
 		hold, end = 0.45, 0.2
 	}

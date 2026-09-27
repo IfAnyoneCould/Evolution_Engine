@@ -243,7 +243,7 @@ func NewCMAES(cfg config.Config, r *rand.Rand) (*CMAES, error) {
 	for j := range n {
 		m.SetVec(j, 0.5)
 	}
-	sigma := 0.3 // TODO add to cmaes config setting
+	sigma := cfg.CMAES.Sigma
 
 	y := int(4 + math.Floor(3*math.Log(float64(n))))
 	u := int(math.Floor(float64(y) / 2))
