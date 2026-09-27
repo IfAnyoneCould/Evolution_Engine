@@ -107,7 +107,7 @@ type Schedule struct {
 type RunSettings struct {
 	TargetFitness  float64 `json:"target_fitness"`
 	MaxCycles      uint    `json:"max_cycles"`
-	PopulationSize uint    `json:"population_size"`
+	PopulationSize *uint    `json:"population_size"`
 }
 
 type Selection struct {
@@ -137,16 +137,22 @@ type Mutation struct {
 	Schedule     Schedule `json:"schedule"`
 }
 
+type CMAES struct {
+	Sigma float64 `json:"sigma"`
+}
+
 type JsonParams struct {
 	Prog             Program          `json:"program"`
 	Bounds           [][2]float64     `json:"bounds"`
-	Mutation         Mutation         `json:"mutation"`
+	Mutation         *Mutation         `json:"mutation"`
 	RunSettings      RunSettings      `json:"run_settings"`
 	Workers          uint             `json:"workers"`
-	Selection        Selection        `json:"selection"`
+	Selection        *Selection        `json:"selection"`
 	StagnationDetect StagnationDetect `json:"stagnation_detection"`
 	SimSettings      SimSettings      `json:"sim_settings"`
 	Output           Output           `json:"output"`
+	Optimizer        string           `json:"optimizer"`
+	CMAES		     *CMAES            `json:"cmaes"`
 }
 
 func defaults() JsonParams {
@@ -161,10 +167,11 @@ func defaults() JsonParams {
 		MinNudge:     0.0005,
 		Schedule:     schedule,
 	}
+	defPopSize := uint(60)
 	runSettings := RunSettings{
 		TargetFitness:  0.99,
 		MaxCycles:      500,
-		PopulationSize: 60,
+		PopulationSize: &defPopSize,
 	}
 	selection := Selection{
 		Pressure: 0.45,
@@ -184,18 +191,19 @@ func defaults() JsonParams {
 	return JsonParams{
 		Prog:             prog,
 		Bounds:           nil,
-		Mutation:         mutation,
+		Mutation:         &mutation,
 		RunSettings:      runSettings,
 		Workers:          10,
-		Selection:        selection,
+		Selection:        &selection,
 		StagnationDetect: stagnant,
 		SimSettings:      simSettings,
 		Output:           output,
+		Optimizer:        "GA",
 	}
 
 }
 
-func (p JsonParams) validate() error {
+func (p JsonParams) validate() error { // TODO add checks that error when cmaes is used and unnecessary fields are filled in
 	if p.Prog.Path == "" {
 		return errors.New("config error: program.path required")
 	}
@@ -205,10 +213,13 @@ func (p JsonParams) validate() error {
 	if p.Workers <= 0 {
 		return errors.New("config error: worker count needs to be above 0")
 	}
-	if p.RunSettings.PopulationSize <= 0 {
+	if !slices.Contains([]string{"ga","cmaes"}, strings.ToLower(p.Optimizer)) {
+		return errors.New("config error: optimizer not recognized")
+	}
+	if *p.RunSettings.PopulationSize <= 0 {
 		return errors.New("config error: run_settings.population_size needs to be greater than 0")
 	}
-	if p.RunSettings.PopulationSize <= p.Selection.Elite {
+	if *p.RunSettings.PopulationSize <= p.Selection.Elite {
 		return errors.New("config error: selection.elite cannot be greater than or equal to run_settings.population_size")
 	}
 	if p.Selection.Pressure <= 0 || p.Selection.Pressure > 1 {
@@ -226,7 +237,7 @@ func (p JsonParams) validate() error {
 	if p.SimSettings.Timeout <= 0 {
 		return errors.New("config error: sim_settings.timeout must be greater than 0")
 	}
-	if float64(p.RunSettings.PopulationSize)*p.Selection.Pressure < 1 {
+	if float64(*p.RunSettings.PopulationSize)*p.Selection.Pressure < 1 {
 		return errors.New("config error: run_settings.population_size * selection.pressure cannot be less than 1")
 	}
 	if p.Mutation.Schedule.Type != nil {
@@ -301,6 +312,8 @@ func Load(path string) (JsonParams, error) {
 
 	dec := json.NewDecoder(bytes.NewReader(file))
 	dec.DisallowUnknownFields()
+
+	// TODO if cmaes is set, set unnecessary fields to nil, plus adding the cmaes fields like sigma
 
 	if err = dec.Decode(&cfg); err != nil {
 		return JsonParams{}, err

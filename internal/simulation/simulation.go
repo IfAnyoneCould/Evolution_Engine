@@ -24,7 +24,7 @@ type Simulation struct {
 
 func NewSimulation(cfg config.JsonParams) (*Simulation, error) {
 	r := rand.New(rand.NewSource(*cfg.SimSettings.RandSeed))
-	opt, err := optimizers.NewGA(cfg, r)
+	opt, err := optimizers.New(cfg, r)
 	if err != nil {
 		return &Simulation{}, err
 	}
