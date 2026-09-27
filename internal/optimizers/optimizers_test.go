@@ -11,8 +11,6 @@ import (
 
 var _ Optimizer = (*GA)(nil)
 
-func ptr[T any](v T) *T { return &v }
-
 func testConfig(dims int, agents int) config.Config {
 	bounds := make([][2]float64, dims)
 	for i := range bounds {
@@ -24,7 +22,7 @@ func testConfig(dims int, agents int) config.Config {
 			Distribution: "uniform",
 			Fraction:     0.05,
 			MinNudge:     0.0001,
-			Schedule:     config.Schedule{Type: ptr("constant"), Hold: ptr(0.0), End: ptr(0.0)},
+			Schedule:     config.Schedule{Type: "constant", Hold: 0.0, End: 0.0},
 		},
 		RunSettings: config.RunSettings{TargetFitness: 1000, MaxCycles: 10, PopulationSize: uint(agents)},
 		Selection:   config.Selection{Pressure: 0.45, Elite: 1},
@@ -106,23 +104,23 @@ func TestNewGASchedule(t *testing.T) {
 		u        float64
 		want     float64
 	}{
-		{"constant", config.Schedule{Type: ptr("constant")}, 0.9, 1},
-		{"linear", config.Schedule{Type: ptr("linear")}, 0.25, 0.75},
-		{"quadratic", config.Schedule{Type: ptr("quadratic")}, 0.5, 0.25},
-		{"power", config.Schedule{Type: ptr("power"), Exponent: ptr(3.0)}, 0.5, 0.125},
-		{"exponential", config.Schedule{Type: ptr("exponential"), Rate: ptr(4.0)}, 1, 0},
-		{"cosine", config.Schedule{Type: ptr("cosine")}, 0.5, 0.5},
-		{"step", config.Schedule{Type: ptr("step"), Steps: ptr(uint(4))}, 0.3, 0.75},
-		{"type is case insensitive", config.Schedule{Type: ptr("LINEAR")}, 0.25, 0.75},
+		{"constant", config.Schedule{Type: "constant"}, 0.9, 1},
+		{"linear", config.Schedule{Type: "linear"}, 0.25, 0.75},
+		{"quadratic", config.Schedule{Type: "quadratic"}, 0.5, 0.25},
+		{"power", config.Schedule{Type: "power", Exponent: 3.0}, 0.5, 0.125},
+		{"exponential", config.Schedule{Type: "exponential", Rate: 4.0}, 1, 0},
+		{"cosine", config.Schedule{Type: "cosine"}, 0.5, 0.5},
+		{"step", config.Schedule{Type: "step", Steps: 4}, 0.3, 0.75},
+		{"type is case insensitive", config.Schedule{Type: "LINEAR"}, 0.25, 0.75},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := testConfig(2, 4)
-			tt.schedule.Hold, tt.schedule.End = ptr(0.1), ptr(0.2)
+			tt.schedule.Hold, tt.schedule.End = 0.1, 0.2
 			cfg.Mutation.Schedule = tt.schedule
 			g := newTestGA(t, cfg, 1)
-			if *g.schedule.Hold != 0.1 || *g.schedule.End != 0.2 {
-				t.Errorf("hold and end not carried over: got %f and %f", *g.schedule.Hold, *g.schedule.End)
+			if g.schedule.Hold != 0.1 || g.schedule.End != 0.2 {
+				t.Errorf("hold and end not carried over: got %f and %f", g.schedule.Hold, g.schedule.End)
 			}
 			if got := g.scheduleFunc.Get(tt.u); math.Abs(got-tt.want) > 1e-9 {
 				t.Errorf("wrong schedule: expected %f, got %f", tt.want, got)
@@ -164,7 +162,7 @@ func TestNewGABadConfig(t *testing.T) {
 		name   string
 		change func(*config.Config)
 	}{
-		{"unknown schedule", func(c *config.Config) { c.Mutation.Schedule.Type = ptr("sawtooth") }},
+		{"unknown schedule", func(c *config.Config) { c.Mutation.Schedule.Type = "sawtooth" }},
 		{"unknown distribution", func(c *config.Config) { c.Mutation.Distribution = "cauchy" }},
 		{"no distribution", func(c *config.Config) { c.Mutation.Distribution = "" }},
 		{"lower above upper", func(c *config.Config) { c.Bounds[0] = [2]float64{1, -1} }},
@@ -353,7 +351,7 @@ func TestCalcNudge(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &GA{
 				scheduleFunc: tt.function,
-				schedule:     config.Schedule{Hold: ptr(tt.hold), End: ptr(tt.end)},
+				schedule:     config.Schedule{Hold: tt.hold, End: tt.end},
 				Fraction:     tt.fraction,
 				MinNudge:     tt.minNudge,
 				startFitness: tt.start,
@@ -492,7 +490,7 @@ func TestSameSeedSameRun(t *testing.T) {
 var _ Optimizer = (*CMAES)(nil)
 
 func cmaConfig(bounds ...[2]float64) config.Config {
-	return config.Config{Bounds: bounds, Optimizer: "cmaes"}
+	return config.Config{Bounds: bounds, Optimizer: "cmaes", CMAES: config.CMAES{Sigma: 0.3}}
 }
 
 func uniformBounds(n int, lo, hi float64) [][2]float64 {

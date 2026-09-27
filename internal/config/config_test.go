@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func genBoundsArray(bounds ...float64) [][2]float64 {
@@ -217,17 +218,14 @@ func TestLoadSchedule(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			n := cfg.Mutation.Schedule
-			if n.Type == nil || n.Hold == nil || n.End == nil {
-				t.Fatalf("type, hold and end should always be filled in by Load, got %+v", n)
+			if n.Type != tt.WantType {
+				t.Errorf("incorrect type, it should come out lowercase: wanted %s, got %s", tt.WantType, n.Type)
 			}
-			if !strings.EqualFold(*n.Type, tt.WantType) {
-				t.Errorf("incorrect type: wanted %s, got %s", tt.WantType, *n.Type)
+			if n.Hold != tt.WantHold {
+				t.Errorf("incorrect hold: wanted %f, got %f", tt.WantHold, n.Hold)
 			}
-			if *n.Hold != tt.WantHold {
-				t.Errorf("incorrect hold: wanted %f, got %f", tt.WantHold, *n.Hold)
-			}
-			if *n.End != tt.WantEnd {
-				t.Errorf("incorrect end: wanted %f, got %f", tt.WantEnd, *n.End)
+			if n.End != tt.WantEnd {
+				t.Errorf("incorrect end: wanted %f, got %f", tt.WantEnd, n.End)
 			}
 		})
 	}
@@ -238,7 +236,7 @@ func TestLoadScheduleExtraFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Mutation.Schedule.Exponent == nil || *cfg.Mutation.Schedule.Exponent != 3 {
+	if cfg.Mutation.Schedule.Exponent != 3 {
 		t.Errorf("exponent not loaded: wanted 3, got %v", cfg.Mutation.Schedule.Exponent)
 	}
 }
@@ -290,6 +288,23 @@ func TestLoadValidation(t *testing.T) {
 		{"optimizer cmaes", `,"optimizer":"cmaes"`, false},
 		{"optimizer in caps", `,"optimizer":"CMAES"`, false},
 		{"unknown optimizer", `,"optimizer":"pso"`, true},
+		{"empty optimizer", `,"optimizer":""`, true},
+		{"exponent on a type that doesn't use it", `,"mutation":{"schedule":{"type":"cosine","exponent":2}}`, true},
+		{"steps on exponential", `,"mutation":{"schedule":{"type":"exponential","rate":4,"steps":3}}`, true},
+		{"rate on power", `,"mutation":{"schedule":{"type":"power","exponent":2,"rate":4}}`, true},
+		{"exponent with no type", `,"mutation":{"schedule":{"exponent":2}}`, true},
+		{"cmaes with a mutation section", `,"optimizer":"cmaes","mutation":{"fraction":0.1}`, true},
+		{"cmaes with a selection section", `,"optimizer":"cmaes","selection":{"elite":2}`, true},
+		{"cmaes with a population size", `,"optimizer":"cmaes","run_settings":{"population_size":20}`, true},
+		{"cmaes with other run settings", `,"optimizer":"cmaes","run_settings":{"max_cycles":20,"target_fitness":0.9}`, false},
+		{"cmaes with a sigma", `,"optimizer":"cmaes","cmaes":{"sigma":0.2}`, false},
+		{"cmaes sigma of 0", `,"optimizer":"cmaes","cmaes":{"sigma":0}`, true},
+		{"negative cmaes sigma", `,"optimizer":"cmaes","cmaes":{"sigma":-0.1}`, true},
+		{"cmaes section with the default optimizer", `,"cmaes":{"sigma":0.2}`, true},
+		{"cmaes section with the ga", `,"optimizer":"ga","cmaes":{"sigma":0.2}`, true},
+		{"ga checks still run with the optimizer left out", `,"selection":{"pressure":0}`, true},
+		{"ga checks still run with the optimizer in caps", `,"optimizer":"GA","selection":{"pressure":0}`, true},
+		{"cmaes skips the ga checks", `,"optimizer":"cmaes","run_settings":{"target_fitness":0.5}`, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
@@ -312,11 +327,96 @@ func TestLoadPartialSection(t *testing.T) {
 	if cfg.RunSettings.MaxCycles != 10 {
 		t.Errorf("incorrect max cycles: wanted %d, got %d", 10, cfg.RunSettings.MaxCycles)
 	}
-	if *cfg.RunSettings.PopulationSize != 60 {
+	if cfg.RunSettings.PopulationSize != 60 {
 		t.Errorf("setting one field wiped the default population size: got %d", cfg.RunSettings.PopulationSize)
 	}
 	if cfg.RunSettings.TargetFitness != 0.99 {
 		t.Errorf("setting one field wiped the default target: got %f", cfg.RunSettings.TargetFitness)
+	}
+}
+
+func TestLoadOptimizer(t *testing.T) {
+	tests := []struct {
+		Name  string
+		Extra string
+		Want  string
+	}{
+		{"left out defaults to the ga", ``, "ga"},
+		{"ga", `,"optimizer":"ga"`, "ga"},
+		{"caps come out lowercase", `,"optimizer":"CMAES"`, "cmaes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.Name, func(t *testing.T) {
+			cfg, err := Load(writeConfig(t, `{"program":{"path":"test_program.exe"},"bounds":[[-1,1]]`+tt.Extra+`}`))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.Optimizer != tt.Want {
+				t.Errorf("incorrect optimizer: wanted %q, got %q", tt.Want, cfg.Optimizer)
+			}
+		})
+	}
+}
+
+func TestLoadCMAESSettings(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `{"program":{"path":"test_program.exe"},"bounds":[[-1,1]],"optimizer":"cmaes"}`))
+	if err != nil {
+		t.Fatalf("cma-es with no cmaes section should load with the default sigma: %v", err)
+	}
+	if cfg.CMAES.Sigma != 0.3 {
+		t.Errorf("incorrect default sigma: wanted 0.3, got %f", cfg.CMAES.Sigma)
+	}
+	cfg, err = Load(writeConfig(t, `{"program":{"path":"test_program.exe"},"bounds":[[-1,1]],"optimizer":"cmaes","cmaes":{"sigma":0.2}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.CMAES.Sigma != 0.2 {
+		t.Errorf("incorrect sigma: wanted 0.2, got %f", cfg.CMAES.Sigma)
+	}
+}
+
+func TestLoadRandSeed(t *testing.T) {
+	base := `{"program":{"path":"test_program.exe"},"bounds":[[-1,1]]`
+	for _, tt := range []struct {
+		Name  string
+		Extra string
+		Want  int64
+	}{
+		{"a given seed is kept", `,"sim_settings":{"rand_seed":42}`, 42},
+		{"a seed of 0 is kept", `,"sim_settings":{"rand_seed":0}`, 0},
+	} {
+		cfg, err := Load(writeConfig(t, base+tt.Extra+`}`))
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", tt.Name, err)
+		}
+		if cfg.SimSettings.RandSeed != tt.Want {
+			t.Errorf("%s: wanted seed %d, got %d", tt.Name, tt.Want, cfg.SimSettings.RandSeed)
+		}
+	}
+
+	path := writeConfig(t, base+`}`)
+	a, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	b, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if a.SimSettings.RandSeed == 0 || a.SimSettings.RandSeed == b.SimSettings.RandSeed {
+		t.Errorf("a left out seed should be picked fresh each load, got %d and %d", a.SimSettings.RandSeed, b.SimSettings.RandSeed)
+	}
+}
+
+func TestLoadScheduleHoldWithoutType(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `{"program":{"path":"test_program.exe"},"bounds":[[-1,1]],"mutation":{"schedule":{"hold":0.3}}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := cfg.Mutation.Schedule
+	if s.Type != "quadratic" || s.Hold != 0.3 || s.End != 0.2 {
+		t.Errorf("no type should keep the tuned quadratic and the given hold: wanted quadratic, 0.3, 0.2, got %s, %f, %f", s.Type, s.Hold, s.End)
 	}
 }
 
@@ -345,7 +445,7 @@ func TestLoadPartialMutation(t *testing.T) {
 	if m.Fraction != 0.05 || m.MinNudge != 0.0005 {
 		t.Errorf("setting the distribution wiped fraction or min nudge: got %f and %f", m.Fraction, m.MinNudge)
 	}
-	if m.Schedule.Type == nil || *m.Schedule.Type != "quadratic" || *m.Schedule.Hold != 0.45 || *m.Schedule.End != 0.2 {
+	if m.Schedule.Type != "quadratic" || m.Schedule.Hold != 0.45 || m.Schedule.End != 0.2 {
 		t.Errorf("setting the distribution lost the default schedule: got %+v", m.Schedule)
 	}
 }
@@ -365,7 +465,6 @@ func TestLoadAllSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	popSize := uint(30)
 	want := struct {
 		Workers    uint
 		Run        RunSettings
@@ -373,7 +472,7 @@ func TestLoadAllSettings(t *testing.T) {
 		Stagnation StagnationDetect
 		Timeout    float64
 		WeightPath string
-	}{3, RunSettings{0.5, 7, &popSize}, Selection{0.3, 4}, StagnationDetect{12, 0.002}, 250, "out.json"}
+	}{3, RunSettings{0.5, 7, 30}, Selection{0.3, 4}, StagnationDetect{12, 0.002}, 250, "out.json"}
 
 	if cfg.Workers != want.Workers {
 		t.Errorf("incorrect workers: wanted %d, got %d", want.Workers, cfg.Workers)
@@ -381,7 +480,7 @@ func TestLoadAllSettings(t *testing.T) {
 	if cfg.RunSettings != want.Run {
 		t.Errorf("incorrect run settings: wanted %+v, got %+v", want.Run, cfg.RunSettings)
 	}
-	if *cfg.Selection != want.Selection {
+	if cfg.Selection != want.Selection {
 		t.Errorf("incorrect selection: wanted %+v, got %+v", want.Selection, cfg.Selection)
 	}
 	if cfg.StagnationDetect != want.Stagnation {
@@ -397,8 +496,8 @@ func TestLoadAllSettings(t *testing.T) {
 	if m.Distribution != "gaussian" || m.Fraction != 0.02 || m.MinNudge != 0.001 {
 		t.Errorf("incorrect mutation: wanted gaussian, 0.02, 0.001, got %s, %f, %f", m.Distribution, m.Fraction, m.MinNudge)
 	}
-	if *m.Schedule.Type != "cosine" || *m.Schedule.Hold != 0.1 || *m.Schedule.End != 0.3 {
-		t.Errorf("incorrect schedule: wanted cosine, 0.1, 0.3, got %s, %f, %f", *m.Schedule.Type, *m.Schedule.Hold, *m.Schedule.End)
+	if m.Schedule.Type != "cosine" || m.Schedule.Hold != 0.1 || m.Schedule.End != 0.3 {
+		t.Errorf("incorrect schedule: wanted cosine, 0.1, 0.3, got %s, %f, %f", m.Schedule.Type, m.Schedule.Hold, m.Schedule.End)
 	}
 }
 

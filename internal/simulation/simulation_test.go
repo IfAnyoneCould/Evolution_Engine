@@ -15,8 +15,6 @@ import (
 
 var simBin string
 
-func ptr[T any](v T) *T { return &v }
-
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "evoengine")
 	if err != nil {
@@ -45,13 +43,13 @@ func testConfig(mode string, target float64, cycles int, agents int) config.Conf
 			Distribution: "uniform",
 			Fraction:     0.05,
 			MinNudge:     0.0001,
-			Schedule:     config.Schedule{Type: ptr("constant"), Hold: ptr(0.0), End: ptr(0.0)},
+			Schedule:     config.Schedule{Type: "constant"},
 		},
 		RunSettings:      config.RunSettings{TargetFitness: target, MaxCycles: uint(cycles), PopulationSize: uint(agents)},
 		Workers:          4,
 		Selection:        config.Selection{Pressure: 0.45, Elite: 2},
 		StagnationDetect: config.StagnationDetect{Patience: 1000, Epsilon: 0.01},
-		SimSettings:      config.SimSettings{Timeout: 5000, RandSeed: ptr(int64(1))},
+		SimSettings:      config.SimSettings{Timeout: 5000, RandSeed: 1},
 		Optimizer:        "ga",
 	}
 }
@@ -239,7 +237,7 @@ func TestRunKeepsGoingWhileImproving(t *testing.T) {
 func TestSameSeedSameRun(t *testing.T) {
 	run := func(seed int64) []float64 {
 		cfg := testConfig("sum", 1000, 15, 20)
-		cfg.SimSettings.RandSeed = ptr(seed)
+		cfg.SimSettings.RandSeed = seed
 		s := newTestSim(t, cfg)
 		runQuiet(t, s)
 		w, _ := s.GetBestWeights()
@@ -257,6 +255,7 @@ func TestSameSeedSameRun(t *testing.T) {
 func TestRunWithCMAES(t *testing.T) {
 	cfg := testConfig("sum", 14.5, 200, 20)
 	cfg.Optimizer = "cmaes"
+	cfg.CMAES.Sigma = 0.3
 	s := newTestSim(t, cfg)
 	if _, ok := s.opt.(*optimizers.CMAES); !ok {
 		t.Fatalf("expected cma-es as the optimizer, got %T", s.opt)
