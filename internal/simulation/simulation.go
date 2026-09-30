@@ -1,13 +1,13 @@
 package simulation
 
 import (
+	"Evolution_Engine/internal/api"
 	"Evolution_Engine/internal/config"
 	"Evolution_Engine/internal/optimizers"
 	"Evolution_Engine/internal/pool"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math/rand"
 	"os"
 	"time"
@@ -20,33 +20,44 @@ type Simulation struct {
 	targetFitness          float64
 	stagnation             config.StagnationDetect
 	output                 config.Output
+	sender                 api.Emitter
 }
 
-func NewSimulation(cfg config.Config) (*Simulation, error) {
+func NewSimulation(cfg config.Config, emitter api.Emitter) (*Simulation, error) {
 	r := rand.New(rand.NewSource(cfg.SimSettings.RandSeed))
 	opt, err := optimizers.New(cfg, r)
 	if err != nil {
 		return &Simulation{}, err
 	}
-	pool, err := pool.NewPool(cfg)
+	p, err := pool.NewPool(cfg)
 	if err != nil {
 		return &Simulation{}, err
 	}
-	fmt.Printf("using random seed: %d\n", cfg.SimSettings.RandSeed)
+
+	e := api.Start{
+		Seed:      cfg.SimSettings.RandSeed,
+		Optimizer: cfg.Optimizer,
+	}
+	if err := emitter.Send(e); err != nil {
+		return &Simulation{}, err
+	}
+
 	return &Simulation{
 		opt:           opt,
-		pool:          pool,
+		pool:          p,
 		cycleMax:      cfg.RunSettings.MaxCycles,
 		currentCycle:  0,
 		targetFitness: cfg.RunSettings.TargetFitness,
 		stagnation:    cfg.StagnationDetect,
-		output:        cfg.Output}, nil
+		output:        cfg.Output,
+		sender:        emitter}, nil
 }
 
 func (s *Simulation) Run() error {
 	lastTop := float64(0)
 	total := time.Now()
 	cycleSinceImprove := 0
+	bestF := 0.0
 
 	for s.currentCycle = 0; s.currentCycle < s.cycleMax; s.currentCycle++ {
 
@@ -67,7 +78,6 @@ func (s *Simulation) Run() error {
 			}
 			return err
 		}
-		fmt.Printf("batch took %v\n", time.Since(start))
 		if err := s.opt.Tell(fit); err != nil {
 			if nerr := s.pool.CloseSims(); nerr != nil {
 				return errors.Join(err, nerr)
@@ -75,11 +85,21 @@ func (s *Simulation) Run() error {
 			return err
 		}
 
-		_, bestF := s.opt.Best()
+		_, bestF = s.opt.Best()
 
-		if bestF >= s.targetFitness {
-			fmt.Printf("simulation reached a target fitness %f in %d cycles\n", bestF, s.currentCycle)
-			break
+		worstF := pool.Min(fit)
+		w, _ := s.opt.Best()
+		e := api.Generation{
+			Cycle:      int(s.currentCycle),
+			Best:       bestF,
+			Mean:       pool.Mean(fit),
+			Min:        worstF,
+			Spread:     pool.Spread(fit),
+			BestGenome: w,
+			BatchTime:  float64(time.Since(start)) / float64(time.Millisecond),
+		}
+		if err := s.sender.Send(e); err != nil {
+			return errors.Join(err, s.pool.CloseSims())
 		}
 
 		if bestF-lastTop < s.stagnation.Epsilon {
@@ -89,8 +109,18 @@ func (s *Simulation) Run() error {
 			lastTop = bestF
 		}
 		if cycleSinceImprove >= int(s.stagnation.Patience) {
-			fmt.Printf("simulation exited, didn't see a fitness improvement greater than %f in %d cycles\n", s.stagnation.Epsilon, s.stagnation.Patience)
+			w, _ := s.GetBestWeights()
+			e := api.Done{
+				Reason:     "stalled",
+				Best:       bestF,
+				BestGenome: w,
+				Cycles:     int(s.currentCycle),
+				Total:      float64(time.Since(total)) / float64(time.Millisecond),
+			}
 			if err := s.pool.CloseSims(); err != nil {
+				return errors.Join(err, s.sender.Send(e))
+			}
+			if err := s.sender.Send(e); err != nil {
 				return err
 			}
 			return nil
@@ -99,10 +129,28 @@ func (s *Simulation) Run() error {
 		if s.currentCycle == 0 {
 			lastTop = bestF
 		}
-		fmt.Printf("Current cycle: %d -- Max fitness: %f -- Goal Fitness: %f\n", s.currentCycle, bestF, s.targetFitness)
+		if bestF >= s.targetFitness {
+			break
+		}
 	}
-	fmt.Printf("Simulation took %v\n", time.Since(total))
-	_ = s.pool.CloseSims()
+	r := "target"
+	if s.currentCycle+1 == s.cycleMax {
+		r = "max_cycles"
+	}
+	w, _ := s.GetBestWeights()
+	e := api.Done{
+		Reason:     r,
+		Best:       bestF,
+		BestGenome: w,
+		Cycles:     int(s.currentCycle),
+		Total:      float64(time.Since(total)) / float64(time.Millisecond),
+	}
+	if err := s.pool.CloseSims(); err != nil {
+		return errors.Join(err, s.sender.Send(e))
+	}
+	if err := s.sender.Send(e); err != nil {
+		return err
+	}
 	return nil
 }
 

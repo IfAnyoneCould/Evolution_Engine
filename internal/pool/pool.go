@@ -4,6 +4,8 @@ import (
 	"Evolution_Engine/internal/config"
 	"context"
 	"errors"
+	"math"
+	"slices"
 	"sync"
 )
 
@@ -78,4 +80,30 @@ func (p *Pool) CloseSims() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func Mean(w []float64) float64 {
+	sum := 0.0
+	for _, i := range w {
+		sum += i
+	}
+	return sum / float64(len(w))
+}
+
+func Spread(w []float64) float64 {
+	m := Mean(w)
+	sum := 0.0
+	for _, a := range w {
+		temp := a - m
+		sum += temp * temp
+	}
+	sum /= float64(len(w))
+	sum = math.Sqrt(sum)
+	return sum
+}
+
+func Min(w []float64) float64 {
+	sorted := slices.Clone(w)
+	slices.Sort(sorted)
+	return sorted[0]
 }

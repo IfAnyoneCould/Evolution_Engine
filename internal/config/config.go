@@ -230,7 +230,7 @@ func (s *fileSchedule) check() error {
 	default:
 		{
 			if s.Rate != nil || s.Exponent != nil || s.Steps != nil {
-				return fmt.Errorf("config error: mismatched mutation.schedule fields with mutation.schedule.type as %s", or(s.Type,"quadratic"))
+				return fmt.Errorf("config error: mismatched mutation.schedule fields with mutation.schedule.type as %s", or(s.Type, "quadratic"))
 			}
 		}
 	}
@@ -321,7 +321,7 @@ func defaults() Config {
 		SimSettings:      simSettings,
 		Output:           output,
 		Optimizer:        "GA",
-		CMAES: cmaes,
+		CMAES:            cmaes,
 	}
 }
 
