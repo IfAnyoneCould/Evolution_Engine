@@ -10,6 +10,7 @@
 # Test binary and coverage output
 *.test
 *.out
+engine/output_test.txt
 coverage.txt
 
 # Go workspace file (usually machine-specific)

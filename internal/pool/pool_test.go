@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
+	"time"
 )
 
 var simBin string
@@ -158,5 +160,91 @@ func TestCloseSims(t *testing.T) {
 	}
 	if _, err := p.Evaluate(context.Background(), vectors(4, 2)); err == nil {
 		t.Errorf("expected an error evaluating against closed sims")
+	}
+}
+
+func checkFailed(t *testing.T, xs [][]float64, fit []float64, failed []int) {
+	t.Helper()
+	low := math.Inf(1)
+	for i := range xs {
+		if !slices.Contains(failed, i) {
+			if math.Abs(fit[i]-sum(xs[i])) > 1e-9 {
+				t.Errorf("fitness %d should have evaluated: expected %f, got %f", i, sum(xs[i]), fit[i])
+			}
+			low = math.Min(low, fit[i])
+		}
+	}
+	for _, i := range failed {
+		if math.IsNaN(fit[i]) || math.IsInf(fit[i], 0) {
+			t.Errorf("failed eval %d should score a finite worst, got %f", i, fit[i])
+		}
+		if fit[i] > low {
+			t.Errorf("failed eval %d scored %f, better than a real eval at %f", i, fit[i], low)
+		}
+	}
+}
+
+func TestEvaluateFailedScoresWorst(t *testing.T) {
+	p := newTestPool(t, "flaky", 1)
+	xs := vectors(9, 2)
+	fit, err := p.Evaluate(context.Background(), xs)
+	if err == nil {
+		t.Errorf("failed evals should still be reported")
+	}
+	if len(fit) != len(xs) {
+		t.Fatalf("wrong number of fitnesses: expected %d, got %d", len(xs), len(fit))
+	}
+	checkFailed(t, xs, fit, []int{2, 5, 8})
+}
+
+func TestEvaluateRestartsCrashedWorker(t *testing.T) {
+	p := newTestPool(t, "crash", 1)
+	xs := vectors(6, 2)
+	fit, _ := p.Evaluate(context.Background(), xs)
+	if len(fit) != len(xs) {
+		t.Fatalf("wrong number of fitnesses: expected %d, got %d", len(xs), len(fit))
+	}
+	checkFailed(t, xs, fit, []int{2, 5})
+
+	xs = vectors(2, 2)
+	fit, err := p.Evaluate(context.Background(), xs)
+	if err != nil {
+		t.Fatalf("worker wasn't restarted after the batch: %v", err)
+	}
+	checkFailed(t, xs, fit, nil)
+}
+
+func TestEvaluateRestartsHungWorker(t *testing.T) {
+	cfg := testConfig("hang", 1)
+	cfg.SimSettings.Timeout = 200
+	p, err := NewPool(cfg)
+	if err != nil {
+		t.Fatalf("could not start the pool: %v", err)
+	}
+	t.Cleanup(func() { _ = p.CloseSims() })
+
+	xs := vectors(3, 2)
+	start := time.Now()
+	fit, _ := p.Evaluate(context.Background(), xs)
+	if time.Since(start) > 2*time.Second {
+		t.Errorf("evaluate waited on the hung sim instead of killing it: took %v", time.Since(start))
+	}
+	if len(fit) != len(xs) {
+		t.Fatalf("wrong number of fitnesses: expected %d, got %d", len(xs), len(fit))
+	}
+	checkFailed(t, xs, fit, []int{1})
+}
+
+func TestEvaluateWorkerAlwaysDies(t *testing.T) {
+	p := newTestPool(t, "die", 2)
+	xs := vectors(4, 2)
+	fit, err := p.Evaluate(context.Background(), xs)
+	if err == nil {
+		t.Errorf("expected error")
+	}
+	for i, f := range fit {
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			t.Errorf("failed eval %d should score a finite worst, got %f", i, f)
+		}
 	}
 }

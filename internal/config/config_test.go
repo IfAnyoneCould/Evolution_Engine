@@ -633,3 +633,22 @@ func TestSimProcessCloseReportsExit(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+func TestSimProcessTimeoutKills(t *testing.T) {
+	sim, err := NewSimProcess(simBin, []string{"hang"}, 200)
+	if err != nil {
+		t.Fatalf("could not start the test sim: %v", err)
+	}
+	defer sim.Close()
+
+	if _, err := sim.Eval([]float64{1, 2}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	start := time.Now()
+	if _, err := sim.Eval([]float64{1, 2}); err == nil {
+		t.Errorf("expected a timeout error")
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Errorf("timeout waited for the hung sim to finish instead of killing it: took %v", time.Since(start))
+	}
+}

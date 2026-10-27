@@ -114,8 +114,9 @@ func (s *Simulation) Run() error {
 				Reason:     "stalled",
 				Best:       bestF,
 				BestGenome: w,
-				Cycles:     int(s.currentCycle),
+				Cycles:     int(s.currentCycle + 1),
 				Total:      float64(time.Since(total)) / float64(time.Millisecond),
+				Stall:      cycleSinceImprove,
 			}
 			if err := s.pool.CloseSims(); err != nil {
 				return errors.Join(err, s.sender.Send(e))
@@ -133,9 +134,10 @@ func (s *Simulation) Run() error {
 			break
 		}
 	}
-	r := "target"
-	if s.currentCycle+1 == s.cycleMax {
-		r = "max_cycles"
+	r := "max_cycles"
+	if bestF >= s.targetFitness {
+		r = "target"
+		s.currentCycle += 1
 	}
 	w, _ := s.GetBestWeights()
 	e := api.Done{

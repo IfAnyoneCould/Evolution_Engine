@@ -66,14 +66,20 @@ func NewPrinter() *Printer {
 func (p *Printer) Send(e Event) error {
 	switch v := e.(type) {
 	case Start:
-		fmt.Printf("Optimizer: %s with random seed %d", v.Optimizer, v.Seed)
+		fmt.Printf("Optimizer: %s with random seed %d\n", v.Optimizer, v.Seed)
 	case Generation:
-		fmt.Printf("Cycle: %d Best: %f Mean: %f Spread: %f BatchTimeMS: %f", v.Cycle, v.Best, v.Mean, v.Spread, v.BatchTime)
+		fmt.Printf("Cycle: %d Best: %f Mean: %f Spread: %f BatchTimeMS: %f\n", v.Cycle, v.Best, v.Mean, v.Spread, v.BatchTime)
 	case Done:
 		switch v.Reason {
 		case "stalled":
-			fmt.Printf("Simulation excited, no improvement in %d cycle ")
+			fmt.Printf("Simulation exited, no improvement in %d cycle(s)\n", v.Stall)
+		case "target":
+			fmt.Printf("Simulation met target with a fitness of %f in %d cycles\n", v.Best, v.Cycles)
+		case "max_cycles":
+			fmt.Printf("Simulation reached maximum cycle count of %d with a best fitness of %f\n", v.Cycles, v.Best)
 		}
+	case Error:
+		fmt.Printf("%s\n", v.Message)
 	}
 	return nil
 }

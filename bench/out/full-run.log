@@ -1,0 +1,53 @@
+shifted_sphere     engine-ga     seed 0  best 0.7351  evals  1000  0.6s
+shifted_sphere     engine-ga     seed 1  best 0.5974  evals  1000  0.5s
+shifted_sphere     engine-ga     seed 2  best 0.4323  evals  1000  0.5s
+shifted_sphere     engine-cmaes  seed 0  best 0.9999  evals  1000  0.5s
+shifted_sphere     engine-cmaes  seed 1  best 0.9999  evals  1000  0.5s
+shifted_sphere     engine-cmaes  seed 2  best 0.9999  evals  1000  0.5s
+shifted_sphere     random        seed 0  best 0.3742  evals  1000  0.2s
+shifted_sphere     random        seed 1  best 0.3434  evals  1000  0.3s
+shifted_sphere     random        seed 2  best 0.3649  evals  1000  0.3s
+shifted_sphere     optuna-tpe    seed 0  best 0.9396  evals  1000  23.5s
+shifted_sphere     optuna-tpe    seed 1  best 0.9231  evals  1000  17.0s
+shifted_sphere     optuna-tpe    seed 2  best 0.9671  evals  1000  14.7s
+shifted_sphere     optuna-cmaes  seed 0  best 0.9999  evals  1000  4.9s
+shifted_sphere     optuna-cmaes  seed 1  best 0.9999  evals  1000  2.0s
+shifted_sphere     optuna-cmaes  seed 2  best 0.9999  evals  1000  1.9s
+shifted_sphere     pycma         seed 0  best 0.9999  evals  1000  1.3s
+shifted_sphere     pycma         seed 1  best 0.9999  evals  1000  0.5s
+shifted_sphere     pycma         seed 2  best 0.9999  evals  1000  0.4s
+Traceback (most recent call last):
+  File "C:\Users\JonahW\projects\evolution-engine\bench\compare.py", line 285, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\JonahW\projects\evolution-engine\bench\compare.py", line 269, in main
+    r = run_one(name, tool, seed, args.budget)
+  File "C:\Users\JonahW\projects\evolution-engine\bench\compare.py", line 194, in run_one
+    RUNNERS[tool](p, seed)
+    ~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\JonahW\projects\evolution-engine\bench\compare.py", line 125, in run_nevergrad
+    ng.optimizers.NGOpt(parametrization=par, budget=p.budget, num_workers=1).minimize(lambda x: -p(x))
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\base.py", line 723, in minimize
+    args = self.ask()
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\base.py", line 508, in ask
+    candidate = self._internal_ask_candidate()
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\optimizerlib.py", line 3894, in _internal_ask_candidate
+    return self.optim.ask()
+           ~~~~~~~~~~~~~~^^
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\base.py", line 508, in ask
+    candidate = self._internal_ask_candidate()
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\optimizerlib.py", line 2172, in _internal_ask_candidate
+    data = learn_on_k_best(
+        self.archive, sample_size, self.algorithm, self.degree, shape, self.parametrization
+    )
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\metamodel.py", line 200, in learn_on_k_best
+    minimum_point = optimizer.minimize(loss_function_sm)
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\base.py", line 700, in minimize
+    result = job.result()
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\utils.py", line 145, in result
+    self._result = self.func(*self.args, **self.kwargs)
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\JonahW\scoop\persist\uv\cache\environments-v2\compare-ba882b020e75ecde\Lib\site-packages\nevergrad\optimization\metamodel.py", line 177, in loss_function_sm
+    return float(model.predict(trans(np.asarray(x, dtype=X[0].dtype).flatten()[None, :])))
+TypeError: only 0-dimensional arrays can be converted to Python scalars

@@ -48,6 +48,22 @@ func main() {
 			fmt.Println("not a number")
 		case "die":
 			os.Exit(1)
+		case "flaky":
+			if count%3 == 0 {
+				fmt.Println("not a number")
+			} else {
+				fmt.Println(sum(weights))
+			}
+		case "crash":
+			if count == 3 {
+				os.Exit(1)
+			}
+			fmt.Println(sum(weights))
+		case "hang":
+			if count == 2 {
+				time.Sleep(3 * time.Second)
+			}
+			fmt.Println(sum(weights))
 		default:
 			fmt.Fprintf(os.Stderr, "unknown mode %q\n", mode)
 			os.Exit(1)

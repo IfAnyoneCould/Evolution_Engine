@@ -17,12 +17,6 @@ func main() {
 		return
 	}
 
-	cfg, err := config.Load(os.Args[1])
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
 	var em api.Emitter
 	if len(os.Args) == 2 {
 		em = api.NewPrinter()
@@ -30,12 +24,21 @@ func main() {
 		switch os.Args[2] {
 		case "print":
 			em = api.NewPrinter()
-		//TODO add the sender types here, not sure exactly what io.Writer
+		case "json":
+			em = api.NewSender(os.Stdout)
 		default:
 			em = api.NewPrinter()
 			e := api.Error{Message: "error: emitter type not recognized"}
 			_ = em.Send(e)
+			return
 		}
+	}
+
+	cfg, err := config.Load(os.Args[1])
+	if err != nil {
+		e := api.Error{Message: err.Error()}
+		em.Send(e)
+		return
 	}
 
 	sim, err := simulation.NewSimulation(cfg, em)
